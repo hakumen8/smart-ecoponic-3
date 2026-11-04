@@ -8,7 +8,7 @@ Describe a model in Arabic or English. The page builds it in the browser with Th
 
 There is no cloud text-to-3D call. A procedural parser reads the sentence (Arabic and English shapes, counts, colors, materials, floors, and relations such as “on”) and assembles meshes: primitives, vehicles, buildings, and multi-part systems.
 
-The filtration preset is a cutaway water filter: glass tanks, a layered media column (sponge, sand, charcoal, gravel, and others), pipes, a pump, and moving flow markers. Aquaponics builds a fish tank, grow bed, biofilter, and pump.
+The filtration preset is a cutaway water filter: glass tanks, a layered media column (sponge, sand, charcoal, gravel, and others), pipes, a pump, and a side waste bin. Static / Live switches a light in-browser loop: dirty water falls through the layers, reject water collects in the waste bin, and clean water flows to the right-hand tank. Aquaponics builds a fish tank, grow bed, biofilter, and pump.
 
 Hunyuan3D, Tripo, Meshy, and similar mesh APIs are **not** wired in. They need an account API key and a backend (browsers cannot call them directly because of CORS, and this repo does not store secrets). No API key is included. To add one later, proxy the vendor from your own server and load the returned GLB with the existing file button.
 

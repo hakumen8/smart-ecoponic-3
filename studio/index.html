@@ -50,6 +50,11 @@
             <span id="progressLabel"></span>
           </div>
           <div class="toolbar glass" role="toolbar">
+            <div class="flow-switch" id="flowSwitch" role="group">
+              <span class="flow-kicker" data-i18n="flowView"></span>
+              <button type="button" id="btnFlowStatic" class="on" aria-pressed="true"><span data-i18n="flowStatic"></span></button>
+              <button type="button" id="btnFlowLive" class="live" aria-pressed="false"><span data-i18n="flowLive"></span></button>
+            </div>
             <button class="tbtn" id="btnReset" type="button"><svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z" fill="currentColor"/></svg><span data-i18n="resetView"></span></button>
             <button class="tbtn toggle" id="btnRotate" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M12 6c-5.5 0-10 2.2-10 5 0 2.2 2.9 4.1 7 4.8V19l4-4-4-4v2.7C5.9 13.1 4 12 4 11c0-1.5 3.6-3 8-3s8 1.5 8 3c0 .7-1 1.6-3 2.2v2.1c2.9-.8 5-2.4 5-4.3 0-2.8-4.5-5-10-5Z" fill="currentColor"/></svg><span data-i18n="autoRotate"></span></button>
             <button class="tbtn toggle" id="btnWire" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7Zm0 2.3L18.7 8 12 11.7 5.3 8ZM5 9.7l6 3.3v6.7l-6-3.3Zm8 10V13l6-3.3v6.7Z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span data-i18n="wireframe"></span></button>

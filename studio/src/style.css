@@ -62,6 +62,26 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .tbtn.primary { background: linear-gradient(135deg, #2aa8e0, #5f6ff0); font-weight: 650; }
 .tbtn.primary.alt { background: linear-gradient(135deg, #7c5cf0, #b25ce0); }
 .tbtn.primary.obj { background: linear-gradient(135deg, #0f9f8a, #2aa8e0); }
+.flow-switch {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px;
+  border-radius: 12px; border: 1px solid #5ad1ff66; background: #07111ee6;
+}
+.flow-kicker { color: var(--muted); font-size: .72rem; font-weight: 700; padding-inline: 6px; white-space: nowrap; }
+.flow-switch button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; padding: 6px 12px; border: 0; border-radius: 9px;
+  background: transparent; cursor: pointer; font-size: .78rem; font-weight: 700;
+}
+.flow-switch button.on { background: #5ad1ff24; color: #dff6ff; }
+.flow-switch button.live.on { background: linear-gradient(135deg, #0f9f8a, #2aa8e0); color: #fff; }
+.flow-switch button.live.on::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fff;
+  animation: livepulse 1.3s ease-out infinite;
+}
+@keyframes livepulse {
+  0% { box-shadow: 0 0 0 0 #ffffffaa; }
+  100% { box-shadow: 0 0 0 7px #ffffff00; }
+}
 .hint { margin: 0 0 8px; text-align: center; color: var(--muted); font-size: .75rem; }
 .empty { position: absolute; inset: 0 0 120px; display: grid; place-content: center; text-align: center; pointer-events: none; padding: 24px; }
 .empty h2 { margin: 0 0 6px; }
@@ -149,6 +169,9 @@ textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
   .stage { min-height: 0; }
   .viewport { height: 52dvh; min-height: 280px; flex: none; }
   .toolbar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .flow-switch { grid-column: 1 / -1; justify-content: center; }
+  .flow-kicker { font-size: .68rem; }
+  .flow-switch button { min-height: 42px; flex: 1; }
   .tbtn { flex-direction: column; gap: 3px; min-height: 52px; padding: 6px 4px; font-size: .68rem; white-space: normal; }
   .panel { overflow: visible; }
   .tagline { display: none; }

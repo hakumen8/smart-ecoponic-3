@@ -5,7 +5,6 @@ import {
   CapsuleGeometry,
   CatmullRomCurve3,
   CircleGeometry,
-  Color,
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
@@ -26,12 +25,13 @@ import {
   Vector3,
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { LAYER_COLORS, glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, waterMaterial } from "./materials.js";
+import { buildFilterColumn, addFlow, buildWasteBin } from "./filter-scene.js";
+import { glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, waterMaterial } from "./materials.js";
 import { rng } from "./parser.js";
 
 const UP = new Vector3(0, 1, 0);
 
-function M(geo, mat, x = 0, y = 0, z = 0) {
+export function M(geo, mat, x = 0, y = 0, z = 0) {
   const mesh = new Mesh(geo, mat);
   mesh.position.set(x, y, z);
   const transmission = mat && mat.transmission > 0;
@@ -40,14 +40,14 @@ function M(geo, mat, x = 0, y = 0, z = 0) {
   return mesh;
 }
 
-function G(name, ...kids) {
+export function G(name, ...kids) {
   const g = new Group();
   g.name = name;
   for (const k of kids.flat()) if (k) g.add(k);
   return g;
 }
 
-function spin(mesh, x = 0, y = 0, z = 0) {
+export function spin(mesh, x = 0, y = 0, z = 0) {
   mesh.rotation.set(x, y, z);
   return mesh;
 }
@@ -61,7 +61,7 @@ function rod(a, b, radius, mat) {
   return mesh;
 }
 
-function label(text, { rtl = false, accent = "#5ad1ff", width = 0.86 } = {}) {
+export function label(text, { rtl = false, accent = "#5ad1ff", width = 0.86 } = {}) {
   const canvas = document.createElement("canvas");
   canvas.width = 640;
   canvas.height = 160;
@@ -345,76 +345,11 @@ function pump(spec) {
   const motor = M(new CylinderGeometry(0.16, 0.16, 0.42, 24), body, 0, 0.36, 0);
   spin(motor, 0, 0, Math.PI / 2);
   g.add(motor);
-  g.add(M(new BoxGeometry(0.08, 0.16, 0.08), glowingMaterial("#7ee0ff"), 0, 0.5, 0.12));
+  const indicator = M(new BoxGeometry(0.08, 0.16, 0.08), glowingMaterial("#7ee0ff"), 0, 0.5, 0.12);
+  indicator.name = "PumpLamp";
+  g.add(indicator);
   g.userData.inlet = new Vector3(-0.28, 0.36, 0);
   g.userData.outlet = new Vector3(0.28, 0.36, 0);
-  return g;
-}
-
-export function buildFilterColumn({ layers, lang = "en", radius = 0.42, cutaway = true, tr, layerLabel, labelX = null }) {
-  const g = G("FilterColumn");
-  const weights = layers.map((id) => (id === "charcoal" || id === "sand" ? 1.15 : id === "sponge" ? 0.7 : 1));
-  const sum = weights.reduce((a, b) => a + b, 0);
-  const mediaH = Math.min(1.85, 0.26 * layers.length + 0.35);
-  const foot = 0.28;
-  const head = 0.36;
-  const h = foot + mediaH + head;
-  const y0 = 0.08;
-  const shellMat = glassMaterial("#e9f8ff");
-  const thetaLen = cutaway ? Math.PI * 1.28 : Math.PI * 2;
-  const shell = M(
-    new CylinderGeometry(radius, radius, h, 64, 1, true, -0.55, thetaLen),
-    shellMat,
-    0,
-    y0 + h / 2,
-    0,
-  );
-  shell.material.side = DoubleSide;
-  g.add(M(new CylinderGeometry(radius * 1.12, radius * 1.18, 0.1, 36), metalMaterial("#455a64"), 0, 0.05, 0));
-  g.add(shell);
-  let y = y0 + foot + mediaH;
-  const layerInfo = [];
-  layers.forEach((id, index) => {
-    const lh = (weights[index] / sum) * mediaH;
-    y -= lh;
-    const mesh = M(new CylinderGeometry(radius * 0.9, radius * 0.9, Math.max(lh - 0.012, 0.05), 40), layerMaterial(id), 0, y + lh / 2, 0);
-    g.add(mesh);
-    layerInfo.push({ id, y: y + lh / 2, h: lh });
-  });
-  const inletWater = M(
-    new CylinderGeometry(radius * 0.88, radius * 0.88, head * 0.55, 32),
-    waterMaterial("#8d6e63", true),
-    0,
-    y0 + h - head * 0.35,
-    0,
-  );
-  g.add(inletWater);
-  g.add(spin(M(new TorusGeometry(radius, 0.03, 8, 36), metalMaterial("#b0bec5"), 0, y0 + h, 0), Math.PI / 2, 0, 0));
-  g.add(spin(M(new TorusGeometry(radius, 0.03, 8, 36), metalMaterial("#b0bec5"), 0, y0 + 0.02, 0), Math.PI / 2, 0, 0));
-  if (cutaway) {
-    const edge = glowingMaterial("#5ad1ff");
-    for (const ang of [-0.55, -0.55 + thetaLen]) {
-      const bar = M(new BoxGeometry(0.02, h, 0.02), edge, Math.sin(ang) * radius, y0 + h / 2, Math.cos(ang) * radius);
-      g.add(bar);
-    }
-  }
-  const title = label(tr ? tr("filterColumn") : "Filter", { rtl: lang === "ar", accent: "#5ad1ff", width: 1.05 });
-  title.position.set(0, y0 + h + 0.34, radius + 0.2);
-  g.add(title);
-  layerInfo.forEach((info, index) => {
-    const name = layerLabel ? layerLabel(info.id) : info.id;
-    const tag = label(`${index + 1}. ${name}`, {
-      rtl: lang === "ar",
-      accent: LAYER_COLORS[info.id] || "#5ad1ff",
-      width: 0.78,
-    });
-    tag.position.set(labelX ?? radius + 0.95, info.y, 0.05);
-    g.add(tag);
-  });
-  g.userData.top = y0 + h;
-  g.userData.radius = radius;
-  g.userData.inlet = new Vector3(radius, y0 + h * 0.92, 0);
-  g.userData.outlet = new Vector3(-radius, y0 + foot * 0.7, 0);
   return g;
 }
 
@@ -1040,25 +975,6 @@ function abstract(spec) {
   return g;
 }
 
-function addFlow(group, points, count = 3) {
-  const curve = new CatmullRomCurve3(points, false, "centripetal");
-  const beads = [];
-  for (let i = 0; i < count; i++) {
-    const bead = M(new SphereGeometry(0.035, 10, 8), glowingMaterial("#80deea"));
-    group.add(bead);
-    beads.push(bead);
-  }
-  const prev = group.userData.tick;
-  group.userData.tick = (t) => {
-    prev?.(t);
-    beads.forEach((bead, i) => {
-      bead.position.copy(curve.getPoint((t * 0.18 + i / beads.length) % 1));
-    });
-  };
-  const mat = metalMaterial("#b0bec5", 0.75, 0.28);
-  group.add(new Mesh(new TubeGeometry(curve, 40, 0.045, 10, false), mat));
-}
-
 export function buildFiltration(spec, ctx) {
   const lang = ctx.lang || spec.lang || "en";
   const tr = ctx.tr || ((k) => k);
@@ -1067,65 +983,173 @@ export function buildFiltration(spec, ctx) {
   const g = G("FiltrationSystem");
   const left = Math.floor(tanks / 2);
   const right = tanks - left;
-  const gap = 1.35;
+  const gap = 2.05;
   const nodes = [];
   for (let i = 0; i < left; i++) nodes.push({ kind: "tank", role: i === 0 ? "dirty" : "settle" });
   nodes.push({ kind: "filter" });
   for (let i = 0; i < right; i++) nodes.push({ kind: "tank", role: i === right - 1 ? "clean" : "storage" });
-  const width = (nodes.length - 1) * gap;
+  const width = Math.max((nodes.length - 1) * gap, 0);
   nodes.forEach((node, i) => {
     node.x = -width / 2 + i * gap;
   });
-  const built = [];
   nodes.forEach((node) => {
     if (node.kind === "filter") {
       const column = buildFilterColumn({
         layers,
         lang,
+        radius: 0.5,
         cutaway: spec.filtration.cutaway !== false,
         tr,
         layerLabel: ctx.layer,
-        labelX: -width / 2 - 1.15,
+        labelX: -width / 2 - 1.28,
       });
       column.position.x = node.x;
       g.add(column);
-      built.push(column);
       node.ref = column;
     } else {
       const dirty = node.role === "dirty" || node.role === "settle";
+      const clean = node.role === "clean";
       const vessel = buildVessel({
-        radius: 0.46,
-        height: 1.2,
+        radius: clean ? 0.58 : 0.48,
+        height: clean ? 1.5 : 1.28,
         water: dirty ? "#8d6e63" : "#4fc3f7",
         dirty,
       });
       vessel.position.x = node.x;
       g.add(vessel);
       const key = node.role === "dirty" ? "dirtyTank" : node.role === "clean" ? "cleanTank" : node.role === "settle" ? "settleTank" : "storageTank";
-      const tag = label(tr(key), { rtl: lang === "ar", accent: dirty ? "#d7ccc8" : "#81d4fa", width: 0.92 });
+      const tag = label(tr(key), { rtl: lang === "ar", accent: dirty ? "#d7ccc8" : "#81d4fa", width: clean ? 1.05 : 0.92 });
       tag.position.set(node.x, (vessel.userData.top || 1.3) + 0.28, 0.55);
       g.add(tag);
-      built.push(vessel);
       node.ref = vessel;
     }
   });
+
+  const filterNode = nodes.find((node) => node.kind === "filter");
+  const fi = nodes.indexOf(filterNode);
+  const fx = filterNode.x;
+  const ud = filterNode.ref.userData;
   for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i].ref;
-    const b = nodes[i + 1].ref;
-    const start = a.userData.outlet.clone().add(new Vector3(a.position.x, 0, 0));
-    const end = b.userData.inlet.clone().add(new Vector3(b.position.x, 0, 0));
-    const lift = Math.max(start.y, end.y) + 0.28;
-    addFlow(g, [start, new Vector3(start.x, lift, 0), new Vector3(end.x, lift, 0), end], 3);
+    if (i === fi || i + 1 === fi) continue;
+    const a = nodes[i];
+    const b = nodes[i + 1];
+    const dirtySide = a.role === "dirty" || a.role === "settle";
+    const start = new Vector3(a.x + a.ref.userData.radius * 0.85, (a.ref.userData.top || 1) * 0.68, 0);
+    const end = new Vector3(b.x - b.ref.userData.radius * 0.85, (b.ref.userData.top || 1) * 0.6, 0);
+    const lift = Math.max(start.y, end.y) + 0.24;
+    addFlow(g, [start, new Vector3(start.x, lift, 0), new Vector3(end.x, lift, 0), end], 4, {
+      color: dirtySide ? "#a1887f" : "#4fc3f7",
+      speed: 0.16,
+      tubeRadius: 0.04,
+      arrowColor: dirtySide ? "#bcaaa4" : "#81d4fa",
+    });
   }
+
+  const fallTop = ud.fallTop.clone();
+  fallTop.x += fx;
+  const fallBottom = ud.fallBottom.clone();
+  fallBottom.x += fx;
+  const wasteJoin = ud.wasteJoin.clone();
+  wasteJoin.x += fx;
+  const prev = nodes[fi - 1];
   const pumpMesh = pump({ color: "#1e88e5", material: "metal" });
-  pumpMesh.position.set(nodes[nodes.length - 1].x, 0, 0.75);
-  pumpMesh.scale.setScalar(0.85);
+  const pumpX = prev ? (prev.x + fx) * 0.5 : fx - 0.95;
+  pumpMesh.position.set(pumpX, 0, 0.82);
+  pumpMesh.scale.setScalar(0.9);
   g.add(pumpMesh);
-  const pumpTag = label(tr("pump"), { rtl: lang === "ar", width: 0.7 });
-  pumpTag.position.set(pumpMesh.position.x, 0.85, 0.75);
+  const pumpTag = label(tr("pump"), { rtl: lang === "ar", width: 0.72 });
+  pumpTag.position.set(pumpX, 0.98, 0.82);
   g.add(pumpTag);
-  const span = width + 1.8;
-  g.add(M(new RoundedBoxGeometry(span, 0.08, 1.7, 3, 0.02), metalMaterial("#263238", 0.5, 0.55), 0, 0.02, 0.1));
+  const lampMesh = pumpMesh.getObjectByName("PumpLamp");
+  if (lampMesh) {
+    pumpMesh.userData.flowTick = (t, live) => {
+      lampMesh.material.emissiveIntensity = live ? 0.35 + Math.sin(t * 7) * 0.5 : 0.7;
+    };
+  }
+
+  const above = (ud.top || fallTop.y) + 0.14;
+  const source = prev
+    ? new Vector3(prev.x + prev.ref.userData.radius * 0.75, (prev.ref.userData.top || 1.2) * 0.58, 0.08)
+    : new Vector3(pumpX - 0.2, 0.72, 0.82);
+  addFlow(
+    g,
+    [
+      source,
+      new Vector3(pumpX - 0.24, 0.42, 0.82),
+      new Vector3(pumpX + 0.24, 0.42, 0.82),
+      new Vector3(pumpX + 0.24, above, 0.42),
+      new Vector3(fallTop.x, above, fallTop.z),
+      fallTop,
+    ],
+    6,
+    { color: "#e08a3c", speed: 0.13, radius: 0.046, tubeRadius: 0.04, arrowColor: "#e0b080" },
+  );
+
+  const fallMid = fallTop.clone().lerp(fallBottom, 0.5);
+  fallMid.x += 0.012;
+  addFlow(g, [fallTop, fallMid, fallBottom], 9, {
+    color: "#d06a28",
+    colorTo: "#7ee7ff",
+    tube: false,
+    speed: 0.095,
+    radius: 0.062,
+    arrows: 5,
+    arrowColor: "#cfd8dc",
+    arrowLength: 0.1,
+  });
+
+  const bin = buildWasteBin();
+  bin.position.set(fx + ud.wasteBin.x, 0, ud.wasteBin.z);
+  g.add(bin);
+  const wasteTag = label(tr("wasteBin"), { rtl: lang === "ar", accent: "#bcaaa4", width: 1.02 });
+  wasteTag.position.set(bin.position.x, bin.userData.top + 0.34, bin.position.z);
+  g.add(wasteTag);
+  const outFront = new Vector3(wasteJoin.x, wasteJoin.y, wasteJoin.z + 0.55);
+  const wasteEnd = new Vector3(bin.position.x, bin.userData.top - 0.03, bin.position.z);
+  addFlow(
+    g,
+    [
+      wasteJoin,
+      outFront,
+      new Vector3(bin.position.x, wasteJoin.y + 0.08, bin.position.z + 0.08),
+      new Vector3(bin.position.x, bin.userData.top + 0.14, bin.position.z),
+      wasteEnd,
+    ],
+    5,
+    { color: "#c4622d", speed: 0.17, radius: 0.05, tubeRadius: 0.03, arrowColor: "#e09a6a" },
+  );
+  const swirl = new Vector3(bin.position.x, 0.2, bin.position.z);
+  addFlow(
+    g,
+    [
+      swirl.clone().add(new Vector3(0.07, 0, 0)),
+      swirl.clone().add(new Vector3(0, 0.03, 0.07)),
+      swirl.clone().add(new Vector3(-0.07, 0.01, 0)),
+      swirl.clone().add(new Vector3(0, 0, -0.06)),
+    ],
+    3,
+    { color: "#a15a32", tube: false, arrows: 0, speed: 0.3, radius: 0.034 },
+  );
+
+  const next = nodes[fi + 1];
+  const outlet = ud.outlet.clone();
+  outlet.x += fx;
+  const cleanLip = next
+    ? new Vector3(next.x, (next.ref.userData.top || 1.3) + 0.02, 0.02)
+    : new Vector3(fx + 1.25, 1.15, 0);
+  const cleanEnd = next
+    ? new Vector3(next.x, (next.ref.userData.top || 1.3) * 0.58, 0.02)
+    : new Vector3(cleanLip.x, 0.7, 0);
+  addFlow(
+    g,
+    [fallBottom, outlet, new Vector3(outlet.x + 0.28, cleanLip.y, 0.06), cleanLip, cleanEnd],
+    6,
+    { color: "#4fc3f7", speed: 0.15, radius: 0.04, tubeRadius: 0.04, arrowColor: "#81d4fa" },
+  );
+
+  const span = width + 2.8;
+  g.add(M(new RoundedBoxGeometry(Math.max(span, 3.2), 0.08, 2.55, 3, 0.02), metalMaterial("#263238", 0.5, 0.55), 0, 0.02, 0.32));
+  g.rotation.y = 0.62;
   return g;
 }
 

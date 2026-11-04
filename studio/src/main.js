@@ -67,6 +67,9 @@ function applyStaticText() {
     lang,
     document.fullscreenElement || $("stage").classList.contains("pseudo-fs") ? "exitFullscreen" : "fullscreen",
   );
+  $("flowSwitch").setAttribute("aria-label", t(lang, "flowView"));
+  $("btnFlowStatic").title = t(lang, "flowStaticTitle");
+  $("btnFlowLive").title = t(lang, "flowLiveTitle");
 }
 
 function renderExamples() {
@@ -178,6 +181,7 @@ function persist() {
     wire: $("btnWire").classList.contains("on"),
     labels: $("btnLabels").classList.contains("on"),
     grid: $("btnGrid").classList.contains("on"),
+    flowLive: $("btnFlowLive").classList.contains("on"),
   });
 }
 
@@ -233,6 +237,17 @@ async function generate(text, { preset = null, keepCamera = false } = {}) {
   } finally {
     setBusy(false);
   }
+}
+
+function setFlowMode(live, { persistNow = true } = {}) {
+  viewer.setFlowLive(live);
+  const staticBtn = $("btnFlowStatic");
+  const liveBtn = $("btnFlowLive");
+  staticBtn.classList.toggle("on", !live);
+  staticBtn.setAttribute("aria-pressed", String(!live));
+  liveBtn.classList.toggle("on", live);
+  liveBtn.setAttribute("aria-pressed", String(live));
+  if (persistNow) persist();
 }
 
 function bindToggle(id, apply) {
@@ -314,6 +329,7 @@ async function boot() {
     $("btnWire").setAttribute("aria-pressed", "true");
     viewer.setWireframe(true);
   }
+  setFlowMode(saved.flowLive === true, { persistNow: false });
 
   $("promptForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -361,6 +377,8 @@ async function boot() {
     if (prompt.value.trim()) generate(prompt.value, { preset: null, keepCamera: true });
   });
   $("btnReset").addEventListener("click", () => viewer.resetCamera());
+  $("btnFlowStatic").addEventListener("click", () => setFlowMode(false));
+  $("btnFlowLive").addEventListener("click", () => setFlowMode(true));
   bindToggle("btnRotate", (on) => viewer.setAutoRotate(on));
   bindToggle("btnWire", (on) => viewer.setWireframe(on));
   bindToggle("btnLabels", (on) => viewer.setLabels(on));

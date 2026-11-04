@@ -459,6 +459,14 @@ function clamp(n, a, b) {
 const LAYER_ORDER = ["sponge", "cloth", "cotton", "sand", "charcoal", "coarseSand", "gravel", "pebbles", "coarseGravel", "ceramic", "bioballs"];
 const DEFAULT_LAYERS = ["sponge", "sand", "charcoal", "coarseSand", "gravel", "coarseGravel"];
 
+function orderLayers(list) {
+  return [...list].sort((a, b) => {
+    const ia = LAYER_ORDER.indexOf(a);
+    const ib = LAYER_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+}
+
 function collectLayers(items) {
   const layers = [];
   for (const it of items.filter((i) => i.kind === "layer")) {
@@ -581,7 +589,7 @@ function assemble(items, lang, text) {
   if (mode === "filtration") {
     spec.mode = "filtration";
     spec.filtration = {
-      layers: layers.length >= 2 ? layers : DEFAULT_LAYERS.slice(),
+      layers: orderLayers(layers.length >= 2 ? layers : DEFAULT_LAYERS.slice()),
       tanks: tankCount(items, objs),
       cutaway: cutaway || items.some((i) => i.kind === "modifier" && i.id === "cutaway"),
       orderHint: LAYER_ORDER,
@@ -598,7 +606,7 @@ function assemble(items, lang, text) {
       plants: clamp(plants?.count || 6, 3, 12),
       fish: clamp(fish?.count || 3, 1, 8),
       withFilter: hasFilter || hasFilt || layers.length > 0,
-      layers: layers.length ? layers : ["bioballs", "ceramic", "sponge"],
+      layers: orderLayers(layers.length ? layers : ["sponge", "ceramic", "bioballs"]),
     };
     spec.objects = objs.filter((o) => !["tank", "filter", "pipe", "pump", "fish", "plant", "planter"].includes(o.type));
     return spec;

@@ -163,6 +163,7 @@ export class Viewer {
     this.clock = new Clock();
     this.labelsOn = true;
     this.wireOn = false;
+    this.flowLive = false;
     this.shadowsOn = true;
     this.intensity = 1;
     this.lightName = "studio";
@@ -240,6 +241,10 @@ export class Viewer {
         if (mat && "wireframe" in mat) mat.wireframe = on;
       });
     });
+  }
+
+  setFlowLive(on) {
+    this.flowLive = !!on;
   }
 
   setLabels(on) {
@@ -330,6 +335,7 @@ export class Viewer {
     }
     this.model.traverse((node) => {
       node.userData?.tick?.(t, node);
+      node.userData?.flowTick?.(t, this.flowLive);
       if (node.userData?.isLabel) node.lookAt(this.camera.position);
     });
     this.controls.update();
