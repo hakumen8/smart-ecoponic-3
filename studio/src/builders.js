@@ -25,6 +25,7 @@ import {
   Vector3,
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { FILTER_STACK } from "./i18n.js";
 import { buildFilterColumn, addFlow, buildWasteBin } from "./filter-scene.js";
 import { glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, waterMaterial } from "./materials.js";
 import { rng } from "./parser.js";
@@ -978,7 +979,6 @@ function abstract(spec) {
 export function buildFiltration(spec, ctx) {
   const lang = ctx.lang || spec.lang || "en";
   const tr = ctx.tr || ((k) => k);
-  const layers = spec.filtration.layers;
   const tanks = spec.filtration.tanks;
   const g = G("FiltrationSystem");
   const left = Math.floor(tanks / 2);
@@ -995,7 +995,8 @@ export function buildFiltration(spec, ctx) {
   nodes.forEach((node) => {
     if (node.kind === "filter") {
       const column = buildFilterColumn({
-        layers,
+        layers: FILTER_STACK,
+        profile: "stack4",
         lang,
         radius: 0.5,
         cutaway: spec.filtration.cutaway !== false,

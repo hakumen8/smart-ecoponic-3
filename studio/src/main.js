@@ -1,5 +1,5 @@
 import { buildSpec } from "./compose.js";
-import { EXAMPLES, PRESETS, layerName, materialName, objectName, t } from "./i18n.js";
+import { EXAMPLES, FILTER_STACK, PRESETS, layerName, materialName, objectName, t } from "./i18n.js";
 import { parsePrompt } from "./parser.js";
 import { clearPrompt, loadState, saveState } from "./storage.js";
 import { Viewer, loadGltf } from "./viewer.js";
@@ -117,7 +117,7 @@ function renderUnderstood() {
   if (parsed.mode === "filtration") {
     bits.push(`<span class="tag">💧 ${escapeHtml(objectName(lang, "filtration"))}</span>`);
     bits.push(`<span class="tag">${parsed.filtration.tanks} × ${escapeHtml(objectName(lang, "tank"))}</span>`);
-    parsed.filtration.layers.forEach((id, i) => {
+    FILTER_STACK.forEach((id, i) => {
       bits.push(`<span class="tag layer">${i + 1}. ${escapeHtml(layerName(lang, id))}</span>`);
     });
   } else if (parsed.mode === "aquaponics") {

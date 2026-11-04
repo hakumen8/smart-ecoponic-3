@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  CanvasTexture,
   CatmullRomCurve3,
   Color,
   ConeGeometry,
@@ -13,6 +14,7 @@ import {
   PlaneGeometry,
   PointLight,
   SphereGeometry,
+  SRGBColorSpace,
   TorusGeometry,
   TubeGeometry,
   Vector3,
@@ -255,15 +257,123 @@ export function buildWasteBin() {
   return g;
 }
 
-export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway = true, tr, layerLabel, labelX = null }) {
+const bedTextures = new Map();
+
+function bedTexture(key, draw, size = 512) {
+  if (bedTextures.has(key)) return bedTextures.get(key);
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  draw(canvas.getContext("2d"), size, size);
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = 8;
+  bedTextures.set(key, tex);
+  return tex;
+}
+
+function drySandMaterial() {
+  const map = bedTexture("dry-sand", (ctx, w, h) => {
+    ctx.fillStyle = "#ead9a6";
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 5200; i++) {
+      const x = h01(i + 1) * w;
+      const y = h01(i + 4) * h;
+      const r = 0.5 + h01(i + 8) * 1.35;
+      const tone = h01(i + 12);
+      ctx.fillStyle = tone > 0.66 ? "#f7edd0" : tone > 0.33 ? "#d8c28a" : "#c4a86a";
+      ctx.fillRect(x, y, r, r);
+    }
+  });
+  return new MeshStandardMaterial({ color: "#f4e6c0", map, roughness: 0.96, metalness: 0, side: DoubleSide });
+}
+
+function filterPadMaterial(coarse) {
+  const map = bedTexture(coarse ? "filter-coarse" : "filter-fine", (ctx, w, h) => {
+    ctx.fillStyle = coarse ? "#d5e4ee" : "#f4f7f8";
+    ctx.fillRect(0, 0, w, h);
+    const step = coarse ? 28 : 8;
+    for (let x = 0; x < w; x += step) {
+      ctx.fillStyle = coarse ? (Math.floor(x / step) % 2 ? "#7fa8be" : "#eef6fb") : Math.floor(x / step) % 2 ? "#d5dee6" : "#ffffff";
+      ctx.fillRect(x, 0, Math.max(2, step * (coarse ? 0.42 : 0.38)), h);
+    }
+    ctx.strokeStyle = coarse ? "#4f7386" : "#9aabba";
+    ctx.lineWidth = coarse ? 2 : 1;
+    const row = coarse ? 36 : 14;
+    for (let y = 0; y < h; y += row) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+  });
+  return new MeshStandardMaterial({
+    color: coarse ? "#d7e6f0" : "#f7fbfc",
+    map,
+    roughness: coarse ? 0.62 : 0.48,
+    metalness: 0.04,
+    side: DoubleSide,
+  });
+}
+
+function addSolidBed(group, y, height, radius, cut, mat) {
+  const body = pieCylinder(radius * 0.9, radius * 0.9, Math.max(height, 0.04), mat, cut, 48);
+  body.position.y = y;
+  group.add(body);
+  addCutFaces(group, radius * 0.9, Math.max(height, 0.04), y, cut, mat);
+}
+
+function addFilterPleats(group, y, height, radius, cut, count, thick, color) {
+  const mat = new MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.03, side: DoubleSide });
+  const span = radius * 0.86;
+  for (let i = 0; i < count; i++) {
+    const ang = cut.start + ((i + 0.5) / count) * cut.length;
+    const fin = new Mesh(new BoxGeometry(thick, height * 0.9, span), mat);
+    fin.position.set(Math.sin(ang) * span * 0.5, y, Math.cos(ang) * span * 0.5);
+    fin.rotation.y = ang;
+    fin.castShadow = false;
+    fin.receiveShadow = true;
+    group.add(fin);
+  }
+}
+
+function addCleanBed(group, id, y, height, radius, cut) {
+  if (id === "drySand") {
+    addSolidBed(group, y, height, radius, cut, drySandMaterial());
+    return;
+  }
+  if (id === "fineFilter") {
+    addSolidBed(group, y, height, radius, cut, filterPadMaterial(false));
+    addFilterPleats(group, y, height, radius, cut, 18, Math.max(0.008, radius * 0.018), "#f7fbff");
+    return;
+  }
+  if (id === "coarseFilter") {
+    addSolidBed(group, y, height, radius, cut, filterPadMaterial(true));
+    addFilterPleats(group, y, height, radius, cut, 8, Math.max(0.02, radius * 0.055), "#6f9aaf");
+    return;
+  }
+  const sponge = layerMaterial("sponge");
+  sponge.roughness = 0.78;
+  sponge.bumpScale = Math.max(sponge.bumpScale || 0, 0.28);
+  addSolidBed(group, y, height, radius, cut, sponge);
+}
+
+function addSeam(group, y, radius, cut) {
+  const seam = pieCylinder(radius * 0.92, radius * 0.92, 0.012, new MeshStandardMaterial({ color: "#f7f9fb", roughness: 0.35, metalness: 0.08 }), cut, 40);
+  seam.position.y = y;
+  group.add(seam);
+}
+
+export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway = true, tr, layerLabel, labelX = null, profile = null }) {
   const g = G("FilterColumn");
   const cut = filterCut(cutaway);
-  const list = layers?.length ? layers : ["sponge", "sand", "charcoal", "coarseGravel"];
+  const stack4 = profile === "stack4";
+  const list = stack4 ? ["drySand", "fineFilter", "coarseFilter", "sponge"] : layers?.length ? layers : ["sponge", "sand", "charcoal", "coarseGravel"];
   const tall = radius >= 0.4;
-  const weights = list.map(layerWeight);
+  const weights = list.map((id) => (stack4 ? 1 : layerWeight(id)));
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
-  const gap = tall ? 0.09 : 0.045;
-  const mediaH = Math.min(tall ? 2.2 : 1.2, (tall ? 0.33 : 0.26) * list.length + (tall ? 0.46 : 0.2));
+  const gap = stack4 ? 0.034 : tall ? 0.09 : 0.045;
+  const mediaH = stack4 ? 1.92 : Math.min(tall ? 2.2 : 1.2, (tall ? 0.33 : 0.26) * list.length + (tall ? 0.46 : 0.2));
   const usable = Math.max(0.2, mediaH - gap * Math.max(0, list.length - 1));
   const foot = tall ? 0.28 : 0.16;
   const head = tall ? 0.4 : 0.26;
@@ -293,25 +403,32 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
     const lh = (weights[index] / sum) * usable;
     cursor -= lh;
     const center = cursor + lh / 2;
-    addMediaLayer(g, id, center, lh * 0.9, radius, cut, 50 + index * 97);
-    const band = new Mesh(
-      new CylinderGeometry(radius * 1.004, radius * 1.004, 0.016, tall ? 48 : 28, 1, true, cut.start, cut.length),
-      new MeshStandardMaterial({
-        color: LAYER_COLORS[id] || "#90a4ae",
-        emissive: LAYER_COLORS[id] || "#000000",
-        emissiveIntensity: 0.2,
-        roughness: 0.4,
-        metalness: 0.05,
-      }),
-    );
-    band.position.y = center;
-    band.castShadow = false;
-    g.add(band);
+    const bedH = stack4 ? lh * 0.96 : lh * 0.9;
+    if (stack4) addCleanBed(g, id, center, bedH, radius, cut);
+    else addMediaLayer(g, id, center, bedH, radius, cut, 50 + index * 97);
+    if (!stack4) {
+      const band = new Mesh(
+        new CylinderGeometry(radius * 1.004, radius * 1.004, 0.016, tall ? 48 : 28, 1, true, cut.start, cut.length),
+        new MeshStandardMaterial({
+          color: LAYER_COLORS[id] || "#90a4ae",
+          emissive: LAYER_COLORS[id] || "#000000",
+          emissiveIntensity: 0.2,
+          roughness: 0.4,
+          metalness: 0.05,
+        }),
+      );
+      band.position.y = center;
+      band.castShadow = false;
+      g.add(band);
+    }
     layerInfo.push({ id, y: center, h: lh });
-    if (["sponge", "cloth", "cotton", "sand", "coarseSand", "charcoal"].includes(id)) wasteY = cursor;
+    if (stack4) {
+      if (id === "fineFilter") wasteY = cursor;
+    } else if (["sponge", "cloth", "cotton", "sand", "coarseSand", "charcoal"].includes(id)) wasteY = cursor;
     if (index < list.length - 1) {
       cursor -= gap;
-      addSeparator(g, cursor + gap / 2, radius, cut, id === "sponge" || id === "cloth" || id === "cotton" || id === "sand");
+      if (stack4) addSeam(g, cursor + gap / 2, radius, cut);
+      else addSeparator(g, cursor + gap / 2, radius, cut, id === "sponge" || id === "cloth" || id === "cotton" || id === "sand");
     }
   });
 
@@ -322,11 +439,13 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
   cap.position.y = mediaTop + 0.025 + capH / 2;
   g.add(cap);
   addCutFaces(g, radius * 0.78, capH, cap.position.y, cut, dirtyMat);
-  const speck = paint({}, "#4e342e", "rubber");
-  for (let i = 0; i < (tall ? 7 : 4); i++) {
-    const ang = cut.start + (0.12 + 0.76 * (i / Math.max(1, (tall ? 6 : 3)))) * cut.length;
-    const rad = radius * (0.16 + (i % 3) * 0.16);
-    g.add(M(new SphereGeometry(0.016 * (radius / 0.5), 7, 5), speck, Math.sin(ang) * rad, cap.position.y, Math.cos(ang) * rad));
+  if (!stack4) {
+    const speck = paint({}, "#4e342e", "rubber");
+    for (let i = 0; i < (tall ? 7 : 4); i++) {
+      const ang = cut.start + (0.12 + 0.76 * (i / Math.max(1, (tall ? 6 : 3)))) * cut.length;
+      const rad = radius * (0.16 + (i % 3) * 0.16);
+      g.add(M(new SphereGeometry(0.016 * (radius / 0.5), 7, 5), speck, Math.sin(ang) * rad, cap.position.y, Math.cos(ang) * rad));
+    }
   }
 
   const rim = metalMaterial("#eceff1", 0.82, 0.24);

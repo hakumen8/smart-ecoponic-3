@@ -203,7 +203,12 @@ export const NAMES = {
   aquaponics: ["زراعة مائية", "Aquaponics"],
 };
 
+export const FILTER_STACK = ["drySand", "fineFilter", "coarseFilter", "sponge"];
+
 export const LAYERS = {
+  drySand: ["رمل جاف", "Dry sand"],
+  fineFilter: ["فلتر ناعم", "Fine filter"],
+  coarseFilter: ["فلتر أكبر", "Larger filter"],
   sponge: ["إسفنج", "Sponge"],
   cotton: ["قطن", "Cotton"],
   cloth: ["قماش", "Cloth"],
@@ -237,7 +242,7 @@ export const EXAMPLES = {
     "كرة زجاجية زرقاء كبيرة فوق طاولة خشبية",
     "ثلاث أشجار خضراء وسيارة حمراء",
     "مبنى من 20 طابق",
-    "نظام ترشيح بخزانين وفلتر فيه إسفنج ورمل وفحم وحصى",
+    "نظام ترشيح بخزانين وفلتر: رمل جاف وفلتر ناعم وفلتر أكبر وإسفنج",
     "نظام زراعة مائية مع أسماك ونباتات",
     "روبوت فضي كبير بعيون مضيئة",
     "صاروخ وكوكب زحل",
@@ -249,7 +254,7 @@ export const EXAMPLES = {
     "a big blue glass sphere on a wooden table",
     "three green trees and a red car",
     "a 20 floor building",
-    "water filtration system with two tanks, sponge, sand, charcoal and gravel",
+    "water filtration system with two tanks, dry sand, a fine filter, a larger filter and a sponge",
     "aquaponics system with fish and plants",
     "a big silver robot with glowing eyes",
     "a rocket and saturn",
@@ -264,10 +269,10 @@ export const PRESETS = [
     icon: "💧",
     featured: true,
     name: ["نظام ترشيح المياه", "Water filtration"],
-    desc: ["مقطع للطبقات وحاوية مخلفات", "Cutaway layers and a side waste bin"],
+    desc: ["أربع طبقات: رمل، فلتران، إسفنج", "Four layers: sand, two filters, sponge"],
     prompt: [
-      "نظام ترشيح مياه بخزانين شفافين وأسطوانة فلتر مقطوعة تظهر طبقات الإسفنج والرمل الناعم والفحم النشط والرمل الخشن والحصى الناعم والحصى الخشن",
-      "Water filtration system with two transparent tanks and a cutaway filter cylinder showing sponge, fine sand, activated charcoal, coarse sand, fine gravel and coarse gravel",
+      "نظام ترشيح مياه بخزانين شفافين وأسطوانة فلتر من أربع طبقات متصلة: رمل جاف ثم فلتر ناعم ثم فلتر أكبر ثم إسفنج",
+      "Water filtration system with two transparent tanks and a four-layer filter column: dry sand, a fine filter, a larger filter, and a sponge",
     ],
   },
   {
