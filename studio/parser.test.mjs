@@ -154,8 +154,27 @@ test("arched door keeps the variant", () => {
   assert.equal(s.objects[0].material, "wood");
 });
 
+test("educational and environmental nouns", () => {
+  const lab = parsePrompt("a microscope, a glass beaker and an atom");
+  assert.equal(lab.objects.find((o) => o.type === "microscope") != null, true);
+  assert.equal(lab.objects.find((o) => o.type === "beaker").material, "glass");
+  assert.equal(lab.objects.some((o) => o.type === "atom"), true);
+  const energy = parsePrompt("a wind turbine, a solar farm and a pine tree");
+  assert.equal(energy.objects.find((o) => o.type === "turbine") != null, true);
+  assert.equal(energy.objects.find((o) => o.type === "solar").variant, "farm");
+  assert.equal(energy.objects.find((o) => o.type === "tree").variant, "pine");
+  const water = parsePrompt("سد ونهر أزرق وجبل");
+  assert.equal(water.objects.some((o) => o.type === "dam"), true);
+  assert.equal(water.objects.find((o) => o.type === "river").color, "#1e88e5");
+  const school = parsePrompt("مدرسة من 3 طوابق");
+  assert.equal(school.objects[0].type, "building");
+  assert.equal(school.objects[0].variant, "school");
+  assert.equal(school.objects[0].floors, 3);
+});
+
 test("improve description and suggestions", () => {
-  assert.match(improvePrompt("school"), /window/i);
+  assert.match(improvePrompt("classroom"), /window/i);
+  assert.match(improvePrompt("school"), /school/i);
   assert.match(improvePrompt("لعبة"), /شطرنج|نرد/);
   assert.match(improvePrompt("red cube"), /cube/i);
   const hits = suggestPrompt("cyl", "en");

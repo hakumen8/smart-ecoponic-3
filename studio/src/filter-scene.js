@@ -111,7 +111,7 @@ function addSponge(group, y, height, radius, cut, seed) {
   lobe.position.set(0.015 * scale, y + height * 0.14, 0.01 * scale);
   group.add(lobe);
 
-  const poreCount = isFast() ? 14 : 36;
+  const poreCount = isFast() ? 12 : 42;
   const pores = new InstancedMesh(
     new SphereGeometry(1, 7, 6),
     new MeshStandardMaterial({ color: "#ffffff", roughness: 1 }),
@@ -275,16 +275,16 @@ function bedTexture(key, draw, size = 512) {
 }
 
 function drySandMaterial() {
-  const map = bedTexture("dry-sand-v2", (ctx, w, h) => {
+  const map = bedTexture("dry-sand-v3", (ctx, w, h) => {
     const sky = ctx.createLinearGradient(0, 0, 0, h);
     sky.addColorStop(0, "#f8edd0");
     sky.addColorStop(1, "#e2c48a");
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < 7400; i++) {
+    for (let i = 0; i < 11000; i++) {
       const x = h01(i + 1) * w;
       const y = h01(i + 4) * h;
-      const r = 0.6 + h01(i + 8) * 2.4;
+      const r = 0.35 + h01(i + 8) * 1.6;
       const tone = h01(i + 12);
       ctx.fillStyle = tone > 0.72 ? "#fff6d8" : tone > 0.4 ? "#e7c98a" : tone > 0.18 ? "#c4964a" : "#8d6230";
       ctx.beginPath();
@@ -296,13 +296,13 @@ function drySandMaterial() {
 }
 
 function filterPadMaterial(coarse) {
-  const map = bedTexture(coarse ? "filter-coarse-v2" : "filter-fine-v2", (ctx, w, h) => {
+  const map = bedTexture(coarse ? "filter-coarse-v3" : "filter-fine-v3", (ctx, w, h) => {
     if (!coarse) {
-      ctx.fillStyle = "#f4f8fb";
+      ctx.fillStyle = "#f7fbfe";
       ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = "#b7c9d6";
+      ctx.strokeStyle = "#c5d4e0";
       ctx.lineWidth = 1;
-      for (let i = 0; i <= w; i += 6) {
+      for (let i = 0; i <= w; i += 4) {
         ctx.beginPath();
         ctx.moveTo(i, 0);
         ctx.lineTo(i, h);
@@ -314,11 +314,11 @@ function filterPadMaterial(coarse) {
       }
       return;
     }
-    ctx.fillStyle = "#d7e8f2";
+    ctx.fillStyle = "#e7f2f8";
     ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = "#3f6f88";
-    ctx.lineWidth = 4;
-    for (let i = 0; i <= w; i += 32) {
+    ctx.strokeStyle = "#2f5f78";
+    ctx.lineWidth = 6;
+    for (let i = 0; i <= w; i += 48) {
       ctx.beginPath();
       ctx.moveTo(i, 0);
       ctx.lineTo(i, h);
@@ -328,11 +328,11 @@ function filterPadMaterial(coarse) {
       ctx.lineTo(w, i);
       ctx.stroke();
     }
-    ctx.fillStyle = "#8fb8cc";
-    for (let y = 16; y < h; y += 32) {
-      for (let x = 16; x < w; x += 32) {
+    ctx.fillStyle = "#7eafc6";
+    for (let y = 24; y < h; y += 48) {
+      for (let x = 24; x < w; x += 48) {
         ctx.beginPath();
-        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.arc(x, y, 12, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -367,8 +367,22 @@ function addFilterPleats(group, y, height, radius, cut, count, thick, color) {
   }
 }
 
+function addFilterRings(group, y, height, radius, cut) {
+  const count = seg(10, 5);
+  const mat = metalMaterial("#5d7f96", 0.35, 0.45);
+  for (let i = 0; i < count; i++) {
+    const ang = cut.start + ((i + 0.5) / count) * cut.length;
+    const ring = new Mesh(new TorusGeometry(Math.max(0.034, radius * 0.08), 0.008, 6, 14), mat);
+    const rad = radius * (0.28 + (i % 3) * 0.16);
+    ring.position.set(Math.sin(ang) * rad, y + ((i % 3) - 1) * height * 0.18, Math.cos(ang) * rad);
+    ring.rotation.y = ang;
+    ring.castShadow = false;
+    group.add(ring);
+  }
+}
+
 function addSandGrains(group, y, height, radius, cut) {
-  const count = isFast() ? 28 : 70;
+  const count = isFast() ? 32 : 130;
   const geo = new IcosahedronGeometry(1, 0);
   const mat = new MeshStandardMaterial({ color: "#f0d48a", roughness: 1 });
   const mesh = new InstancedMesh(geo, mat, count);
@@ -379,7 +393,7 @@ function addSandGrains(group, y, height, radius, cut) {
     const ang = cut.start + h01(i + 2) * cut.length;
     const rad = Math.sqrt(0.08 + h01(i + 5) * 0.9) * radius * 0.72;
     const yy = y + (h01(i + 9) - 0.35) * height * 0.72;
-    const s = (0.028 + h01(i + 4) * 0.034) * (radius / 0.5);
+    const s = (0.014 + h01(i + 4) * 0.018) * (radius / 0.5);
     dummy.position.set(Math.sin(ang) * rad, yy, Math.cos(ang) * rad);
     dummy.rotation.set(h01(i) * 4, h01(i + 1) * 4, 0);
     dummy.scale.setScalar(s);
@@ -403,15 +417,19 @@ function addCleanBed(group, id, y, height, radius, cut) {
   }
   if (id === "fineFilter") {
     addSolidBed(group, y, height, radius, cut, filterPadMaterial(false));
-    addFilterPleats(group, y, height, radius, cut, seg(22, 10), Math.max(0.006, radius * 0.014), "#f7fbff");
-    const gauze = pieCylinder(radius * 0.82, radius * 0.82, 0.012, layerMaterial("screen"), cut, seg(28, 16));
-    gauze.position.y = y + height * 0.42;
+    addFilterPleats(group, y, height, radius, cut, seg(34, 12), Math.max(0.004, radius * 0.009), "#f7fbff");
+    const gauze = pieCylinder(radius * 0.84, radius * 0.84, 0.01, layerMaterial("screen"), cut, seg(32, 16));
+    gauze.position.y = y + height * 0.36;
     group.add(gauze);
+    const gauze2 = pieCylinder(radius * 0.7, radius * 0.7, 0.008, layerMaterial("screen"), cut, seg(24, 12));
+    gauze2.position.y = y - height * 0.28;
+    group.add(gauze2);
     return;
   }
   if (id === "coarseFilter") {
     addSolidBed(group, y, height, radius, cut, filterPadMaterial(true));
-    addFilterPleats(group, y, height, radius, cut, seg(9, 6), Math.max(0.028, radius * 0.07), "#4f86a3");
+    addFilterPleats(group, y, height, radius, cut, seg(7, 4), Math.max(0.036, radius * 0.09), "#3f6f88");
+    addFilterRings(group, y, height, radius, cut);
     return;
   }
   addSponge(group, y, height, radius, cut, 23);
@@ -555,7 +573,7 @@ function animateFlows(group, t, live) {
     if (flow.stream) {
       flow.stream.visible = live;
       if (live && flow.stream.material) {
-        flow.stream.material.opacity = 0.62 + Math.sin(t * 3.2) * 0.18;
+        flow.stream.material.opacity = 0.5 + Math.sin(t * 4.2) * 0.28;
       }
     }
     const n = flow.beads.length || 1;
@@ -576,7 +594,7 @@ function animateFlows(group, t, live) {
       const pulse = 0.78 + Math.sin(t * 10 + i * 0.9) * 0.28;
       bead.scale.set(pulse, pulse * 1.25, pulse);
       if (flow.colorTo) {
-        const shifted = Math.min(1, Math.max(0, (u - 0.08) / 0.72));
+        const shifted = Math.min(1, Math.max(0, (u - 0.2) / 0.45));
         const smooth = shifted * shifted * (3 - 2 * shifted);
         FLOW_LERP.copy(flow.color).lerp(flow.colorTo, smooth);
         bead.material.color.copy(FLOW_LERP);

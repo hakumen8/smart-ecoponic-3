@@ -1,9 +1,11 @@
+import { buildObject } from "./builders.js";
 import { buildSpec } from "./compose.js";
 import { improvePrompt } from "./improve.js";
 import { EXAMPLES, FILTER_STACK, PRESETS, layerName, materialName, objectName, t } from "./i18n.js";
 import { parsePrompt, suggestPrompt } from "./parser.js";
 import { detectFastDevice, setQualityMode } from "./quality.js";
 import { clearPrompt, loadFavorites, loadState, rememberPrompt, removeFavorite, saveFavorite, saveState } from "./storage.js";
+import { generateTextTo3D, loadApiKey, loadAssetProxy, MeshyError, saveApiKey, saveAssetProxy } from "./text3d.js";
 import { Viewer, loadGltf } from "./viewer.js";
 
 const $ = (id) => document.getElementById(id);
@@ -15,6 +17,9 @@ let presetId = null;
 let parsed = null;
 let fileTitle = "";
 let busy = false;
+let apiJob = false;
+let apiAbort = null;
+let fromApi = false;
 let panelOpen = true;
 let quality = "high";
 let panelWidth = 332;
@@ -55,6 +60,11 @@ function syncStatus() {
   gen.disabled = busy;
   gen.querySelector("span").textContent = t(lang, busy ? "generating" : "generate");
   gen.setAttribute("aria-label", t(lang, busy ? "generating" : "generate"));
+  const apiBtn = $("btnApi");
+  if (apiBtn) {
+    apiBtn.disabled = busy;
+    apiBtn.querySelector("span").textContent = t(lang, busy && apiJob ? "apiGenerating" : "apiGenerate");
+  }
   const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
   const themeKey = theme === "light" ? "themeToDark" : "themeToLight";
   const themeFull = theme === "light" ? "themeToDarkFull" : "themeToLightFull";
@@ -81,9 +91,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function setProgress(amount, key) {
+function setProgress(amount, key, detail = "") {
   $("progressBar").style.width = `${Math.round(amount * 100)}%`;
-  $("progressLabel").textContent = t(lang, key);
+  const base = t(lang, key);
+  $("progressLabel").textContent = detail ? `${base} · ${detail}` : base;
 }
 
 function setBusy(on) {
@@ -124,12 +135,13 @@ function applyStaticText() {
 function renderExamples() {
   const host = $("examples");
   host.replaceChildren();
-  const cats = ["water", "basics", "education", "engineering", "games", "furniture"];
+  const cats = ["water", "basics", "education", "engineering", "environment", "games", "furniture"];
   const catKey = {
     water: "catWater",
     basics: "catBasics",
     education: "catEducation",
     engineering: "catEngineering",
+    environment: "catEnvironment",
     games: "catGames",
     furniture: "catFurniture",
   };
@@ -244,6 +256,7 @@ function updateStats() {
 }
 
 function fileName(ext) {
+  if (fromApi) return `meshy.${ext}`;
   const base = (parsed?.mode === "filtration"
     ? "filtration"
     : parsed?.mode === "aquaponics"
@@ -290,6 +303,7 @@ async function generate(text, { preset = null, keepCamera = false } = {}) {
   }
   presetId = preset;
   fileTitle = "";
+  fromApi = false;
   const previous = keepCamera
     ? { pos: viewer.camera.position.clone(), target: viewer.controls.target.clone() }
     : null;
@@ -494,7 +508,8 @@ function renderFavorites() {
   for (const item of items) {
     const wrap = document.createElement("div");
     wrap.className = "preset favorite-row";
-    wrap.innerHTML = `<span class="pn">${escapeHtml(item.title || item.prompt)}</span><span class="pd">${escapeHtml(item.prompt)}</span>`;
+    const thumb = item.thumbnail ? `<img class="fav-thumb" alt="" src="${escapeHtml(item.thumbnail)}" />` : "";
+    wrap.innerHTML = `${thumb}<span class="pn">${escapeHtml(item.title || item.prompt)}</span><span class="pd">${escapeHtml(item.prompt)}</span>`;
     wrap.addEventListener("click", () => {
       prompt.value = item.prompt;
       generate(item.prompt, { preset: null });
@@ -567,17 +582,25 @@ function shareUrl() {
   return url.toString();
 }
 
+function showShare(text) {
+  $("shareUrl").value = text;
+  $("shareSheet").classList.remove("hidden");
+  $("shareUrl").focus();
+  $("shareUrl").select();
+}
+
 async function shareLink() {
   const text = shareUrl();
   try {
     if (navigator.share && narrowScreen()) {
-      await navigator.share({ title: t(lang, "appName"), url: text });
+      await navigator.share({ title: t(lang, "appName"), text, url: text });
       return;
     }
   } catch (error) {
     if (error?.name === "AbortError") return;
   }
   const ok = await copyText(text);
+  showShare(text);
   toast(t(lang, ok ? "copied" : "shareFail"), !ok);
 }
 
@@ -621,6 +644,145 @@ function showShortcuts(on) {
   $("shortcuts").classList.toggle("hidden", !on);
 }
 
+function syncApiKeyForm() {
+  const saved = !!loadApiKey();
+  const editing = $("apiKeyForm").dataset.force === "1";
+  $("apiKeyForm").classList.toggle("hidden", saved && !editing);
+  $("apiKeySaved").classList.toggle("hidden", !saved || editing);
+  $("apiProxyInput").value = loadAssetProxy();
+}
+
+function revealApiKey() {
+  $("apiKeyForm").dataset.force = "1";
+  $("apiKeyForm").classList.remove("hidden");
+  $("apiKeySaved").classList.add("hidden");
+  $("apiKeyInput").focus();
+}
+
+function rememberApiKey() {
+  const key = saveApiKey($("apiKeyInput").value);
+  $("apiKeyInput").value = "";
+  delete $("apiKeyForm").dataset.force;
+  syncApiKeyForm();
+  toast(t(lang, key ? "apiSavedKey" : "apiForgotKey"), !key);
+}
+
+function addShape(type) {
+  if (busy) return;
+  const spec = {
+    type,
+    count: 1,
+    scale: 1,
+    sx: 1,
+    sy: 1,
+    color: type === "sphere" ? "#1e88e5" : "#90a4ae",
+    material: type === "sphere" ? "glass" : type === "cone" ? "metal" : null,
+    seed: Date.now(),
+  };
+  const group = buildObject(spec, { lang, partLabel: (id) => objectName(lang, id) });
+  viewer.addPart(group);
+  $("emptyState").classList.add("hidden");
+  selectedPartId = group.userData.edit?.id || null;
+  renderParts();
+  updateStats();
+  selectPart(group);
+}
+
+function apiErrorText(error) {
+  const code = error instanceof MeshyError ? error.code : "failed";
+  const key = {
+    invalid_key: "apiInvalidKey",
+    credits: "apiCredits",
+    forbidden: "apiForbidden",
+    rate: "apiRate",
+    bad_request: "apiBadRequest",
+    failed: "apiFailed",
+    timeout: "apiTimeout",
+    network: "apiNetwork",
+    cors: "apiCors",
+    cancelled: "apiCancelled",
+  }[code] || "apiFailed";
+  return t(lang, key);
+}
+
+async function generateApi() {
+  const value = prompt.value.trim();
+  if (!value) {
+    prompt.focus();
+    toast(t(lang, "emptyBody"), true);
+    return;
+  }
+  if (!loadApiKey()) {
+    revealApiKey();
+    toast(t(lang, "apiNeedKey"), true);
+    return;
+  }
+  if (busy) return;
+  apiJob = true;
+  apiAbort = new AbortController();
+  $("apiCancel").classList.remove("hidden");
+  $("apiFileLinkWrap").classList.add("hidden");
+  setBusy(true);
+  setProgress(0.04, "apiProgressSubmit");
+  if (narrowScreen()) {
+    panelOpen = false;
+    applyPanel();
+  }
+  try {
+    const result = await generateTextTo3D(value, {
+      apiKey: loadApiKey(),
+      assetProxy: loadAssetProxy(),
+      signal: apiAbort.signal,
+      onProgress: ({ phase, progress }) => {
+        if (phase === "preview") setProgress(0.08 + (progress / 100) * 0.4, "apiProgressPreview", `${progress}%`);
+        else if (phase === "texture") setProgress(0.5 + (progress / 100) * 0.38, "apiProgressTexture", `${progress}%`);
+        else if (phase === "download") setProgress(0.94, "apiProgressDownload");
+      },
+    });
+    if (result.trimmed) toast(t(lang, "apiTrimmed"), true);
+    const file = new File([result.blob], "meshy.glb", { type: "model/gltf-binary" });
+    const model = await loadGltf(file);
+    viewer.setModel(model);
+    parsed = null;
+    presetId = null;
+    fromApi = true;
+    fileTitle = value.length > 42 ? `${value.slice(0, 42)}…` : value;
+    $("emptyState").classList.add("hidden");
+    selectedPartId = null;
+    rememberPrompt(value);
+    renderUnderstood();
+    renderPresets();
+    renderHistory();
+    renderParts();
+    updateStats();
+    const url = new URL(location.href);
+    url.searchParams.set("q", value);
+    history.replaceState(null, "", url);
+    persist();
+    setProgress(1, "progressDone");
+    toast(t(lang, result.textured ? "apiReady" : "apiTextureSkipped"), !result.textured);
+  } catch (error) {
+    console.error(error?.code || error?.name || "api");
+    if (error instanceof MeshyError && error.code === "cancelled") {
+      toast(t(lang, "apiCancelled"));
+    } else {
+      if (error instanceof MeshyError && error.code === "cors") {
+        $("apiProxyDetails").open = true;
+        if (error.url) {
+          $("apiFileLink").href = error.url;
+          $("apiFileLinkWrap").classList.remove("hidden");
+        }
+      }
+      toast(apiErrorText(error), true);
+    }
+  } finally {
+    apiJob = false;
+    apiAbort = null;
+    $("apiCancel").classList.add("hidden");
+    setBusy(false);
+  }
+}
+
 function renderShortcutList() {
   const rows = [
     ["Ctrl + Enter", "generate"],
@@ -660,6 +822,7 @@ async function boot() {
   renderFavorites();
   renderParts();
   renderShortcutList();
+  syncApiKeyForm();
   if (saved.panelWidth) {
     panelWidth = Math.max(280, Math.min(560, Number(saved.panelWidth) || 332));
     document.querySelector(".layout").style.setProperty("--panel-w", `${panelWidth}px`);
@@ -723,13 +886,47 @@ async function boot() {
     generate(next, { preset: null });
   });
   $("btnShare").addEventListener("click", () => shareLink());
+  $("copyShare").addEventListener("click", async () => {
+    const ok = await copyText($("shareUrl").value);
+    toast(t(lang, ok ? "copied" : "shareFail"), !ok);
+  });
+  $("closeShare").addEventListener("click", () => $("shareSheet").classList.add("hidden"));
+  $("shareSheet").addEventListener("click", (event) => {
+    if (event.target === $("shareSheet")) $("shareSheet").classList.add("hidden");
+  });
+  $("btnApi").addEventListener("click", () => generateApi());
+  $("btnSaveKey").addEventListener("click", () => rememberApiKey());
+  $("btnForgetKey").addEventListener("click", () => {
+    $("apiKeyInput").value = "";
+    saveApiKey("");
+    delete $("apiKeyForm").dataset.force;
+    syncApiKeyForm();
+    toast(t(lang, "apiForgotKey"));
+  });
+  $("btnEditKey").addEventListener("click", () => revealApiKey());
+  $("apiProxyInput").addEventListener("change", () => {
+    saveAssetProxy($("apiProxyInput").value.trim());
+    toast(t(lang, "apiProxySaved"));
+  });
+  $("apiCancel").addEventListener("click", () => apiAbort?.abort());
+  $("addCube").addEventListener("click", () => addShape("cube"));
+  $("addSphere").addEventListener("click", () => addShape("sphere"));
+  $("addCylinder").addEventListener("click", () => addShape("cylinder"));
+  $("addCone").addEventListener("click", () => addShape("cone"));
   $("btnFavorite").addEventListener("click", () => {
     const value = prompt.value.trim();
     if (!value) return toast(t(lang, "emptyBody"), true);
+    let thumbnail = "";
+    try {
+      thumbnail = viewer.hasModel() ? viewer.thumbnail() : "";
+    } catch {
+      thumbnail = "";
+    }
     saveFavorite({
       id: `${Date.now()}`,
       title: (modelTitle() || value).slice(0, 48),
       prompt: value,
+      thumbnail,
     });
     renderFavorites();
     toast(t(lang, "savedFavorite"));
@@ -740,6 +937,7 @@ async function boot() {
     parsed = null;
     presetId = null;
     fileTitle = "";
+    fromApi = false;
     $("emptyState").classList.remove("hidden");
     selectedPartId = null;
     viewer.clearHighlight();
@@ -834,6 +1032,7 @@ async function boot() {
       parsed = null;
       presetId = null;
       fileTitle = file.name;
+      fromApi = false;
       if (narrowScreen()) {
         panelOpen = false;
         applyPanel();
@@ -946,6 +1145,10 @@ async function boot() {
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeExportMenu();
+      if (!$("shareSheet").classList.contains("hidden")) {
+        $("shareSheet").classList.add("hidden");
+        return;
+      }
       if (!$("shortcuts").classList.contains("hidden")) {
         showShortcuts(false);
         return;

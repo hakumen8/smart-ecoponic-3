@@ -35,9 +35,18 @@ export function loadFavorites() {
 }
 
 export function saveFavorite(entry) {
-  const favorites = [entry, ...loadFavorites().filter((item) => item.prompt !== entry.prompt)].slice(0, 24);
-  saveState({ favorites });
-  return favorites;
+  const favorites = [entry, ...loadFavorites().filter((item) => item.prompt !== entry.prompt)].slice(0, 16);
+  try {
+    saveState({ favorites });
+  } catch {
+    const slim = favorites.map((item) => {
+      const next = { ...item };
+      delete next.thumbnail;
+      return next;
+    });
+    saveState({ favorites: slim });
+  }
+  return loadFavorites();
 }
 
 export function removeFavorite(id) {

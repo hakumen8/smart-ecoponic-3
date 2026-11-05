@@ -116,13 +116,15 @@ export class Viewer {
     this.scene = new Scene();
     this.camera = new PerspectiveCamera(42, 1, 0.08, 180);
     this.camera.position.set(4.4, 2.5, 6.4);
+    const phone = typeof navigator !== "undefined" && /iPhone|iPod/.test(navigator.userAgent || "");
+    this.phone = phone;
     this.renderer = new WebGLRenderer({
-      antialias: true,
+      antialias: !phone,
       alpha: true,
       preserveDrawingBuffer: true,
-      powerPreference: "high-performance",
+      powerPreference: phone ? "low-power" : "high-performance",
     });
-    this.pixelCap = 2;
+    this.pixelCap = phone ? 1.25 : 2;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.pixelCap));
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
@@ -217,12 +219,26 @@ export class Viewer {
     this.homePos = this.camera.position.clone();
     this.homeTarget = new Vector3();
     this.fly = null;
+    this.interacting = false;
+    this.settleUntil = 0;
+    this.skip = 0;
+    this.controls.addEventListener("start", () => {
+      this.interacting = true;
+    });
+    this.controls.addEventListener("end", () => {
+      this.interacting = false;
+      this.settleUntil = performance.now() + 800;
+    });
 
     this.setLighting("studio");
     this.resize();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(container);
-    this.renderer.setAnimationLoop(() => this.tick());
+    this.loop = () => this.tick();
+    this.renderer.setAnimationLoop(this.loop);
+    document.addEventListener("visibilitychange", () => {
+      this.renderer.setAnimationLoop(document.hidden ? null : this.loop);
+    });
   }
 
   resize() {
@@ -276,9 +292,9 @@ export class Viewer {
   setQuality(mode) {
     const fast = mode === "fast";
     this.quality = fast ? "fast" : "high";
-    this.pixelCap = fast ? 1.25 : 2;
+    this.pixelCap = fast ? (this.phone ? 1 : 1.25) : this.phone ? 1.5 : 2;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.pixelCap));
-    const size = fast ? 1024 : 2048;
+    const size = fast ? (this.phone ? 512 : 1024) : this.phone ? 1024 : 2048;
     if (this.key.shadow.map) {
       this.key.shadow.map.dispose();
       this.key.shadow.map = null;
@@ -341,9 +357,7 @@ export class Viewer {
     }
   }
 
-  setModel(object) {
-    this.clear();
-    this.model.add(object);
+  prepareObject(object) {
     object.traverse((node) => {
       if (node.isMesh) {
         node.castShadow = !(node.material && node.material.transmission > 0);
@@ -352,7 +366,23 @@ export class Viewer {
       if (node.userData?.isLabel) node.visible = this.labelsOn;
     });
     if (this.wireOn) this.setWireframe(true);
+  }
+
+  setModel(object) {
+    this.clear();
+    this.model.add(object);
+    this.prepareObject(object);
     this.frame(false);
+  }
+
+  addPart(object) {
+    object.updateMatrixWorld(true);
+    const host = new Box3().setFromObject(this.model);
+    const part = new Box3().setFromObject(object);
+    if (!host.isEmpty() && !part.isEmpty()) object.position.x += host.max.x - part.min.x + 0.4;
+    this.model.add(object);
+    this.prepareObject(object);
+    this.frame(true);
   }
 
   frame(animate = false) {
@@ -415,8 +445,28 @@ export class Viewer {
       node.userData?.flowTick?.(t, this.flowLive);
       if (node.userData?.isLabel) node.lookAt(this.camera.position);
     });
+    const moving =
+      this.controls.autoRotate || this.flowLive || this.fly || this.interacting || performance.now() < this.settleUntil;
+    if (this.quality === "fast" && !moving) {
+      this.skip = (this.skip + 1) % 2;
+      if (this.skip) {
+        this.controls.update();
+        return;
+      }
+    }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  thumbnail() {
+    const ratio = this.renderer.getPixelRatio();
+    this.renderer.setPixelRatio(0.45);
+    this.resize();
+    this.renderer.render(this.scene, this.camera);
+    const url = this.renderer.domElement.toDataURL("image/jpeg", 0.52);
+    this.renderer.setPixelRatio(ratio);
+    this.resize();
+    return url.length > 140000 ? "" : url;
   }
 
   stats() {

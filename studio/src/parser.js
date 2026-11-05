@@ -137,6 +137,7 @@ const OBJECTS = [
   [["castle", "قلعه", "قصر"], "castle"],
   [["windmill", "طاحونه", "طاحونه هواء"], "windmill"],
   [["bench", "مقعد حديقه", "دكه"], "bench"],
+  [["solar farm", "مزرعه شمسيه", "الواح شمسيه كثيره"], "solar", { variant: "farm" }],
   [["solar panel", "لوح شمسي", "الواح شمسيه"], "solar"],
   [["fence", "سياج", "سور"], "fence"],
   [["stairs", "staircase", "سلم", "درج"], "stairs"],
@@ -156,6 +157,17 @@ const OBJECTS = [
   [["shelf", "bookshelf", "bookcase", "رف", { t: "رفوف", plural: true }, "مكتبه"], "shelf"],
   [["cabinet", "wardrobe", "closet", "خزانه", "دولاب"], "cabinet"],
   [["chessboard", "chess board", "checkerboard", "رقعه شطرنج", "شطرنج"], "chessboard"],
+  [["school building", "school", "مبنى مدرسي", "مدرسه"], "building", { variant: "school" }],
+  [["factory", "مصنع", "معمل"], "building", { variant: "factory" }],
+  [["beaker", "دورق", "كأس مختبر"], "beaker"],
+  [["atom", "ذره"], "atom"],
+  [["microscope", "مجهر"], "microscope"],
+  [["dam", "سد"], "dam"],
+  [["wind turbine", "turbine", "توربين رياح", "توربين"], "turbine"],
+  [["satellite", "قمر صناعي"], "satellite"],
+  [["lighthouse", "مناره", "فنار"], "lighthouse"],
+  [["river", "نهر"], "river"],
+  [["lake", "بحيره"], "lake"],
   [["globe", "كره ارضيه", "مجسم الارض"], "planet", { variant: "earth" }],
 ];
 
@@ -617,7 +629,8 @@ function assemble(items, lang, text) {
   for (const o of objs) {
     if ((o.color === "#c0c0c0" || o.color === "#d4af37") && !o.material) o.material = "metal";
     if (o.type === "building" && !o.floors) {
-      o.floors = o.variant === "skyscraper" ? 22 : o.variant === "tower" ? 12 : 8;
+      o.floors =
+        o.variant === "skyscraper" ? 22 : o.variant === "tower" ? 12 : o.variant === "school" ? 3 : o.variant === "factory" ? 2 : 8;
     }
     if (o.type === "castle" && !o.floors) o.floors = 3;
   }
@@ -802,6 +815,7 @@ const SUGGEST_EN = [
   "tree", "building", "rocket", "planet", "globe", "aquaponics",
   "water filtration system", "wooden door", "glass window", "stone arch", "metal gear", "wooden table",
   "arched door", "school building", "four glass windows",
+  "beaker", "atom", "microscope", "dam", "wind turbine", "satellite", "lighthouse", "river", "lake", "solar farm",
 ];
 
 const SUGGEST_AR = [
@@ -811,6 +825,7 @@ const SUGGEST_AR = [
   "سياره", "جسر", "ترس", "انبوب", "مضخه", "روبوت", "قلعه", "شطرنج", "نرد", "تاج",
   "شجره", "مبني", "صاروخ", "كوكب", "نظام ترشيح", "زراعه مائيه",
   "باب خشبي", "نافذه زجاجيه", "قوس حجري", "طاوله خشبيه",
+  "دورق", "ذره", "مجهر", "سد", "توربين", "قمر صناعي", "مناره", "نهر", "بحيره", "مزرعه شمسيه", "مدرسه", "مصنع",
 ];
 
 export function suggestPrompt(text, langHint) {

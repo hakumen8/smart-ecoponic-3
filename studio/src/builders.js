@@ -539,19 +539,28 @@ function robot(spec) {
 }
 
 function building(spec) {
-  const floors = Math.max(1, spec.floors || (spec.variant === "skyscraper" ? 22 : spec.variant === "tower" ? 12 : 8));
-  const w = spec.variant === "tower" ? 0.72 : spec.variant === "skyscraper" ? 1.2 : 1.05;
-  const d = spec.variant === "tower" ? 0.72 : 0.86;
+  const floors = Math.max(1, spec.floors || (spec.variant === "skyscraper" ? 22 : spec.variant === "tower" ? 12 : spec.variant === "school" ? 3 : spec.variant === "factory" ? 2 : 8));
+  const w = spec.variant === "tower" ? 0.72 : spec.variant === "skyscraper" ? 1.2 : spec.variant === "factory" ? 1.35 : 1.05;
+  const d = spec.variant === "tower" ? 0.72 : spec.variant === "factory" ? 0.7 : 0.86;
   const fh = spec.variant === "skyscraper" ? 0.22 : 0.26;
   const h = floors * fh;
-  const body = paint(spec, spec.variant === "skyscraper" ? "#c5d0dc" : "#7f93b5", spec.material || "stone");
+  const fallback = spec.variant === "skyscraper" ? "#c5d0dc" : spec.variant === "factory" ? "#546e7a" : spec.variant === "school" ? "#ffe0b2" : "#7f93b5";
+  const body = paint(spec, fallback, spec.material || (spec.variant === "factory" ? "metal" : "stone"));
   const g = G("Building");
   g.add(M(new BoxGeometry(w, h, d), body, 0, h / 2, 0));
-  g.add(windowGrid(floors, spec.variant === "tower" ? 2 : 4, w, h, d, 0));
+  g.add(windowGrid(floors, spec.variant === "tower" ? 2 : spec.variant === "factory" ? 5 : 4, w, h, d, 0));
   g.add(M(new BoxGeometry(w * 0.22, fh * 0.7, 0.04), paint({}, "#4e342e", "wood"), 0, fh * 0.4, d / 2 + 0.02));
   if (spec.variant === "tower" || spec.variant === "skyscraper") {
     g.add(M(new CylinderGeometry(0.03, 0.03, 0.45, 8), metalMaterial("#eceff1"), 0, h + 0.22, 0));
     g.add(M(new SphereGeometry(0.05, 10, 8), glowingMaterial("#ff5252"), 0, h + 0.48, 0));
+  } else if (spec.variant === "school") {
+    g.add(M(new BoxGeometry(w + 0.08, 0.06, d + 0.08), paint({}, "#ef6c00", "stone"), 0, h + 0.03, 0));
+    g.add(M(new CylinderGeometry(0.02, 0.02, 0.34, 8), metalMaterial("#eceff1"), w * 0.28, h + 0.2, 0));
+    g.add(M(new BoxGeometry(0.16, 0.1, 0.02), paint({}, "#e53935", "fabric"), w * 0.38, h + 0.28, 0));
+  } else if (spec.variant === "factory") {
+    g.add(M(new BoxGeometry(w + 0.06, 0.05, d + 0.06), paint({}, "#37474f", "metal"), 0, h + 0.03, 0));
+    g.add(M(new CylinderGeometry(0.1, 0.12, 0.5, 12), paint({}, "#78909c", "metal"), w * 0.32, h + 0.28, -d * 0.15));
+    g.add(M(new CylinderGeometry(0.08, 0.08, 0.12, 10), paint({}, "#90a4ae", "metal"), -w * 0.2, h + 0.08, d * 0.1));
   } else {
     g.add(M(new BoxGeometry(w + 0.08, 0.06, d + 0.08), paint({}, "#546e7a", "stone"), 0, h + 0.03, 0));
   }
@@ -809,8 +818,29 @@ function bench(spec) {
   );
 }
 
+function solarPanelMesh(spec, x) {
+  const g = new Group();
+  const panel = M(
+    new BoxGeometry(0.72, 0.04, 0.42),
+    new MeshStandardMaterial({ color: spec.color || "#1565c0", emissive: "#0d47a1", emissiveIntensity: 0.25, metalness: 0.4, roughness: 0.3 }),
+  );
+  panel.position.set(0, 0.48, 0);
+  panel.rotation.x = -0.55;
+  g.add(panel);
+  g.add(M(new BoxGeometry(0.04, 0.36, 0.04), metalMaterial("#cfd8dc"), 0, 0.18, 0));
+  g.position.x = x;
+  return g;
+}
+
 function solar(spec) {
   const g = G("SolarPanel");
+  if (spec.variant === "farm") {
+    g.add(solarPanelMesh(spec, -0.85));
+    g.add(solarPanelMesh(spec, 0));
+    g.add(solarPanelMesh(spec, 0.85));
+    g.add(M(new BoxGeometry(2.2, 0.04, 0.7), metalMaterial("#90a4ae"), 0, 0.02, 0));
+    return g;
+  }
   const panel = M(
     new BoxGeometry(1.1, 0.05, 0.6),
     new MeshStandardMaterial({ color: spec.color || "#1565c0", emissive: "#0d47a1", emissiveIntensity: 0.25, metalness: 0.4, roughness: 0.3 }),
@@ -1134,6 +1164,138 @@ function chessboard(spec) {
   return g;
 }
 
+function beaker(spec) {
+  const g = G("Beaker");
+  const glass = glassMaterial(spec.color || "#e7f6ff");
+  g.add(M(new CylinderGeometry(0.28, 0.32, 0.72, seg(28, 16), 1, true), glass, 0, 0.42, 0));
+  g.add(M(new CylinderGeometry(0.3, 0.34, 0.05, 20), glass, 0, 0.08, 0));
+  g.add(M(new CylinderGeometry(0.24, 0.27, 0.32, seg(20, 12)), waterMaterial("#4fc3f7"), 0, 0.3, 0));
+  g.add(M(new TorusGeometry(0.12, 0.018, 8, 16), metalMaterial("#90a4ae"), 0.34, 0.55, 0));
+  return g;
+}
+
+function atom(spec) {
+  const g = G("Atom");
+  const core = spec.color || "#ff7043";
+  g.add(M(new SphereGeometry(0.16, seg(20, 12), seg(16, 10)), glowingMaterial(core), 0, 0.55, 0));
+  const ringMat = metalMaterial("#81d4fa", 0.35, 0.28);
+  const poses = [
+    [Math.PI / 2, 0, 0],
+    [1.15, 0.9, 0.2],
+    [1.35, -0.7, 0.9],
+  ];
+  poses.forEach((rot) => {
+    const ring = M(new TorusGeometry(0.42, 0.012, 8, seg(40, 20)), ringMat, 0, 0.55, 0);
+    ring.rotation.set(rot[0], rot[1], rot[2]);
+    g.add(ring);
+  });
+  const electron = M(new SphereGeometry(0.045, 10, 8), glowingMaterial("#fff59d"), 0.42, 0.55, 0);
+  electron.userData.tick = (t, node) => {
+    node.position.set(Math.cos(t * 2.2) * 0.42, 0.55 + Math.sin(t * 2.2) * 0.05, Math.sin(t * 2.2) * 0.42);
+  };
+  g.add(electron);
+  return g;
+}
+
+function microscope(spec) {
+  const g = G("Microscope");
+  const metal = paint(spec, "#37474f", spec.material || "metal");
+  g.add(M(new CylinderGeometry(0.24, 0.28, 0.06, 20), metal, 0, 0.04, 0));
+  g.add(M(new BoxGeometry(0.18, 0.04, 0.16), paint({}, "#eceff1"), 0, 0.1, 0.02));
+  g.add(M(new CylinderGeometry(0.03, 0.035, 0.58, 10), metal, -0.08, 0.4, 0));
+  g.add(M(new CylinderGeometry(0.045, 0.035, 0.2, 12), metal, 0.04, 0.66, 0.02));
+  g.add(M(new CylinderGeometry(0.04, 0.03, 0.18, 12), glassMaterial("#b3e5fc"), 0.04, 0.46, 0.02));
+  g.add(M(new SphereGeometry(0.05, 12, 10), glowingMaterial(spec.color || "#fff8e1"), 0.04, 0.78, 0.02));
+  return g;
+}
+
+function dam(spec) {
+  const g = G("Dam");
+  const concrete = paint(spec, "#90a4ae", spec.material || "stone");
+  g.add(M(new BoxGeometry(1.6, 0.95, 0.28), concrete, 0, 0.48, 0));
+  g.add(M(new BoxGeometry(1.7, 0.08, 0.36), paint({}, "#78909c", "stone"), 0, 0.96, 0));
+  g.add(M(new BoxGeometry(0.9, 0.5, 0.55), waterMaterial("#4fc3f7"), -0.1, 0.28, -0.38));
+  const spill = M(new BoxGeometry(0.08, 0.42, 0.05), waterMaterial("#81d4fa"), 0.15, 0.7, 0.2);
+  spill.userData.tick = (t, node) => {
+    node.scale.y = 0.92 + Math.sin(t * 6) * 0.08;
+  };
+  g.add(spill);
+  return g;
+}
+
+function turbine(spec) {
+  const g = G("Turbine");
+  const metal = paint(spec, spec.color || "#eceff1", spec.material || "metal");
+  g.add(M(new CylinderGeometry(0.05, 0.09, 1.25, 12), metal, 0, 0.62, 0));
+  g.add(M(new CylinderGeometry(0.16, 0.16, 0.04, 16), metalMaterial("#90a4ae"), 0, 0.04, 0));
+  const hub = new Group();
+  hub.position.set(0, 1.28, 0.1);
+  hub.add(M(new SphereGeometry(0.09, 14, 12), metal, 0, 0, 0));
+  const bladeMat = paint({}, "#e3f2fd", "plastic");
+  for (let i = 0; i < 3; i++) {
+    const holder = new Group();
+    holder.rotation.z = (i * Math.PI * 2) / 3;
+    holder.add(M(new BoxGeometry(0.07, 0.52, 0.02), bladeMat, 0, 0.32, 0));
+    hub.add(holder);
+  }
+  hub.userData.tick = (t) => {
+    hub.rotation.z = t * (isFast() ? 0.7 : 1.35);
+  };
+  g.add(hub);
+  return g;
+}
+
+function satellite(spec) {
+  const g = G("Satellite");
+  const body = paint(spec, spec.color || "#cfd8dc", spec.material || "metal");
+  g.add(M(new BoxGeometry(0.28, 0.2, 0.22), body, 0, 0.55, 0));
+  const wing = paint({}, "#1565c0", "metal");
+  g.add(M(new BoxGeometry(0.5, 0.02, 0.2), wing, -0.42, 0.55, 0));
+  g.add(M(new BoxGeometry(0.5, 0.02, 0.2), wing, 0.42, 0.55, 0));
+  g.add(M(new CylinderGeometry(0.012, 0.012, 0.32, 8), metalMaterial("#eceff1"), 0, 0.82, 0));
+  g.add(M(new SphereGeometry(0.04, 10, 8), glowingMaterial("#ffeb3b"), 0, 1.02, 0));
+  return g;
+}
+
+function lighthouse(spec) {
+  const g = G("Lighthouse");
+  const tower = paint(spec, spec.color || "#f7f7f7", spec.material || "stone");
+  g.add(M(new CylinderGeometry(0.2, 0.32, 1.3, seg(24, 14)), tower, 0, 0.68, 0));
+  g.add(M(new CylinderGeometry(0.23, 0.26, 0.1, 18), paint({}, "#e53935"), 0, 0.95, 0));
+  g.add(M(new CylinderGeometry(0.18, 0.2, 0.16, 16), glassMaterial("#fff59d"), 0, 1.4, 0));
+  g.add(M(new ConeGeometry(0.24, 0.16, 16), paint({}, "#c62828"), 0, 1.56, 0));
+  const beam = new Group();
+  beam.position.set(0, 1.4, 0);
+  const ray = M(new BoxGeometry(0.55, 0.03, 0.03), glowingMaterial("#fff8e1"), 0.32, 0, 0);
+  beam.add(ray);
+  beam.userData.tick = (t) => {
+    if (!isFast()) beam.rotation.y = t * 0.8;
+  };
+  g.add(beam);
+  return g;
+}
+
+function river(spec) {
+  const g = G("River");
+  const water = M(new BoxGeometry(1.9, 0.08, 0.5), waterMaterial(spec.color || "#4fc3f7"), 0, 0.06, 0);
+  water.userData.tick = (t, node) => {
+    node.position.y = 0.06 + Math.sin(t * 3) * 0.008;
+  };
+  g.add(water);
+  g.add(M(new BoxGeometry(2, 0.06, 0.08), paint({}, "#8d6e63", "stone"), 0, 0.05, 0.28));
+  g.add(M(new BoxGeometry(2, 0.06, 0.08), paint({}, "#8d6e63", "stone"), 0, 0.05, -0.28));
+  return g;
+}
+
+function lake(spec) {
+  const g = G("Lake");
+  g.add(M(new CylinderGeometry(0.7, 0.75, 0.08, seg(28, 16)), waterMaterial(spec.color || "#0288d1"), 0, 0.05, 0));
+  const shore = M(new TorusGeometry(0.72, 0.06, 6, seg(24, 14)), paint({}, "#81c784", "rubber"), 0, 0.06, 0);
+  shore.rotation.x = Math.PI / 2;
+  g.add(shore);
+  return g;
+}
+
 function abstract(spec) {
   const rand = rng(spec.seed || 1);
   const g = G("Abstract");
@@ -1263,20 +1425,33 @@ export function buildFiltration(spec, ctx) {
 
   const fallMid = fallTop.clone().lerp(fallBottom, 0.5);
   fallMid.x += 0.012;
-  addFlow(g, [fallTop, fallMid, fallBottom], isFast() ? 7 : 14, {
+  addFlow(g, [fallTop, fallMid, fallBottom], isFast() ? 8 : 16, {
     color: "#ff8a3d",
     colorTo: "#7ee7ff",
     tube: false,
     stream: true,
-    streamRadius: 0.07,
+    streamRadius: isFast() ? 0.06 : 0.09,
     dirty: true,
-    speed: 0.22,
-    radius: 0.085,
-    arrows: isFast() ? 3 : 5,
+    speed: 0.34,
+    radius: isFast() ? 0.05 : 0.072,
+    arrows: isFast() ? 3 : 6,
     arrowColor: "#e7f6ff",
     arrowLength: 0.12,
-    wobble: 0.02,
+    wobble: 0.028,
   });
+  if (!isFast()) {
+    const mistA = fallTop.clone().lerp(fallBottom, 0.15);
+    const mistB = fallTop.clone().lerp(fallBottom, 0.72);
+    addFlow(g, [fallTop, mistA, mistB, fallBottom], 8, {
+      color: "#ffe0b2",
+      colorTo: "#e1f5fe",
+      tube: false,
+      arrows: 0,
+      speed: 0.52,
+      radius: 0.028,
+      wobble: 0.04,
+    });
+  }
 
   const bin = buildWasteBin();
   bin.position.set(fx + ud.wasteBin.x, 0, ud.wasteBin.z);
@@ -1475,6 +1650,15 @@ const BUILDERS = {
   shelf,
   cabinet,
   chessboard,
+  beaker,
+  atom,
+  microscope,
+  dam,
+  turbine,
+  satellite,
+  lighthouse,
+  river,
+  lake,
   abstract,
 };
 

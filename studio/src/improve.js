@@ -60,6 +60,21 @@ const THEMES = [
     en: "a furniture set with a wooden table, two wooden chairs, a sofa, a lamp, a bed and a cabinet",
     ar: "طقم أثاث بطاولة خشبية وكرسيين خشبيين وأريكة ومصباح وسرير وخزانة",
   },
+  {
+    keys: ["lab", "laboratory", "science", "مختبر", "علوم"],
+    en: "a microscope, a glass beaker and an atom",
+    ar: "مجهر ودورق زجاجي وذرة",
+  },
+  {
+    keys: ["renewable", "energy", "ecosystem", "environment", "طاقه", "بيئه"],
+    en: "a wind turbine, a solar farm, a pine tree, a lake and a sun",
+    ar: "توربين رياح ومزرعة شمسية وشجرة صنوبر وبحيرة وشمس",
+  },
+  {
+    keys: ["coast", "harbor", "ساحل", "مناره"],
+    en: "a white lighthouse, a blue boat and a cloud",
+    ar: "منارة بيضاء وقارب أزرق وسحابة",
+  },
 ];
 
 function colorWord(hex, lang) {
@@ -82,6 +97,9 @@ function typeWord(spec, lang) {
   if (spec.type === "tree" && spec.variant === "palm") return lang === "ar" ? "نخلة" : "palm tree";
   if (spec.type === "tree" && spec.variant === "pine") return lang === "ar" ? "صنوبر" : "pine tree";
   if (spec.type === "door" && spec.variant === "arched") return lang === "ar" ? "باب مقوس" : "arched door";
+  if (spec.type === "building" && spec.variant === "school") return lang === "ar" ? "مدرسة" : "school building";
+  if (spec.type === "building" && spec.variant === "factory") return lang === "ar" ? "مصنع" : "factory";
+  if (spec.type === "solar" && spec.variant === "farm") return lang === "ar" ? "مزرعة شمسية" : "solar farm";
   if (spec.type === "window" && spec.variant === "arched") return lang === "ar" ? "نافذة مقوسة" : "arched window";
   return objectName(lang, spec.type);
 }

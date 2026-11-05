@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "test": "node --test parser.test.mjs"
+    "test": "node --test parser.test.mjs text3d.test.mjs"
   },
   "dependencies": {
     "three": "0.170.0"

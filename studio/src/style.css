@@ -806,6 +806,45 @@ kbd {
   background: var(--surface-2);
   font-size: .78rem;
 }
+.api-box {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn.api {
+  width: 100%;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.btn.api:disabled { opacity: .65; cursor: progress; }
+.api-note { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.api-label { font-size: .82rem; font-weight: 700; }
+#apiKeyInput, #apiProxyInput, #shareUrl {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  padding: 8px 12px;
+}
+.api-steps { margin: 0; padding-inline-start: 1.1rem; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+.api-link { color: var(--accent-text); font-size: .82rem; font-weight: 700; }
+.api-saved { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; font-size: .82rem; }
+#apiProxyDetails summary { cursor: pointer; font-size: .82rem; font-weight: 700; }
+.add-shapes { margin: 8px 0 12px; }
+.add-shapes .tool-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.fav-thumb {
+  width: 100%;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: var(--bg);
+}
 .favorite-row { position: relative; }
 .favorite-row .remove-fav {
   position: absolute;
