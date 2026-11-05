@@ -571,10 +571,10 @@ export function layerMaterial(id, accent) {
 }
 
 export const LAYER_COLORS = {
-  drySand: "#e8d7a4",
-  fineFilter: "#e7eef2",
-  coarseFilter: "#8fb4c6",
-  sponge: "#f3d27a",
+  drySand: "#e6b422",
+  fineFilter: "#f4fbff",
+  coarseFilter: "#1f6f99",
+  sponge: "#f5a623",
   cotton: "#f4f1ea",
   cloth: "#e6dcc4",
   sand: "#e7d3a1",

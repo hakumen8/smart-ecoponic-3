@@ -26,7 +26,7 @@ import { isFast, seg } from "./quality.js";
 
 const UP = new Vector3(0, 1, 0);
 const FLOW_LERP = new Color();
-const FILTER_ARC = Math.PI * 1.05;
+const FILTER_ARC = Math.PI * 1.42;
 
 function h01(n) {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
@@ -450,8 +450,8 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
   const tall = radius >= 0.4;
   const weights = list.map((id) => (stack4 ? 1 : layerWeight(id)));
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
-  const gap = stack4 ? 0.07 : tall ? 0.1 : 0.05;
-  const mediaH = stack4 ? 1.92 : Math.min(tall ? 2.2 : 1.2, (tall ? 0.33 : 0.26) * list.length + (tall ? 0.46 : 0.2));
+  const gap = stack4 ? 0.12 : tall ? 0.1 : 0.05;
+  const mediaH = stack4 ? 2.35 : Math.min(tall ? 2.2 : 1.2, (tall ? 0.33 : 0.26) * list.length + (tall ? 0.46 : 0.2));
   const usable = Math.max(0.2, mediaH - gap * Math.max(0, list.length - 1));
   const foot = tall ? 0.28 : 0.16;
   const head = tall ? 0.4 : 0.26;
@@ -486,7 +486,17 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
     cursor -= lh;
     const center = cursor + lh / 2;
     const bedH = stack4 ? lh * 0.96 : lh * 0.9;
-    if (stack4) addCleanBed(g, id, center, bedH, radius, cut);
+    if (stack4) {
+      addCleanBed(g, id, center, bedH, radius, cut);
+      const tone = LAYER_COLORS[id] || "#90a4ae";
+      const belt = new Mesh(
+        new TorusGeometry(radius * 1.06, 0.028, 8, 28),
+        new MeshStandardMaterial({ color: tone, emissive: tone, emissiveIntensity: 0.45, roughness: 0.35, metalness: 0.15 }),
+      );
+      belt.rotation.x = Math.PI / 2;
+      belt.position.y = center;
+      g.add(belt);
+    }
     else addMediaLayer(g, id, center, bedH, radius, cut, 50 + index * 97);
     if (!stack4) {
       const band = new Mesh(
@@ -514,7 +524,7 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
       else addSeparator(g, seamY, radius, cut, id === "sponge" || id === "cloth" || id === "cotton" || id === "sand");
       const tone = LAYER_COLORS[id] || "#90a4ae";
       const collar = new Mesh(
-        new CylinderGeometry(radius * 1.025, radius * 1.025, stack4 ? 0.03 : 0.02, tall ? 40 : 24, 1, true, cut.start, cut.length),
+        new CylinderGeometry(radius * 1.04, radius * 1.04, stack4 ? 0.08 : 0.02, tall ? 40 : 24, 1, true, cut.start, cut.length),
         new MeshStandardMaterial({ color: tone, emissive: tone, emissiveIntensity: 0.28, roughness: 0.42, metalness: 0.08 }),
       );
       collar.position.y = seamY;

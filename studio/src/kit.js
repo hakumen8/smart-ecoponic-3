@@ -95,7 +95,7 @@ export function dressPipe(group, curve, points, opts = {}) {
       const b = points[i + 1].clone().sub(points[i]);
       if (a.lengthSq() < 1e-6 || b.lengthSq() < 1e-6) continue;
       if (a.normalize().dot(b.normalize()) > 0.9) continue;
-      const elbow = piece(new SphereGeometry(radius * 1.7, isFast() ? 8 : 12, isFast() ? 6 : 10), elbowMat);
+      const elbow = piece(new SphereGeometry(radius * 2.35, isFast() ? 10 : 14, isFast() ? 8 : 12), elbowMat);
       elbow.position.copy(points[i]);
       group.add(elbow);
       const collar = piece(new TorusGeometry(radius * 1.15, radius * 0.2, 6, 10), band, 0, 0, 0, false);
@@ -122,7 +122,7 @@ export function dressPipe(group, curve, points, opts = {}) {
     const stem = piece(new CylinderGeometry(radius * 0.22, radius * 0.22, radius * 2.6, 8), band);
     stem.position.copy(at).add(new Vector3(0, radius * 1.7, 0));
     group.add(stem);
-    const wheel = piece(new TorusGeometry(radius * 1.15, radius * 0.16, 6, 14), metalMaterial(opts.valveColor || "#ffb300", 0.55, 0.32), 0, 0, 0, false);
+    const wheel = piece(new TorusGeometry(radius * 1.85, radius * 0.2, 8, 16), metalMaterial(opts.valveColor || "#ffb300", 0.55, 0.32), 0, 0, 0, false);
     wheel.rotation.x = Math.PI / 2;
     wheel.position.copy(at).add(new Vector3(0, radius * 3.05, 0));
     group.add(wheel);

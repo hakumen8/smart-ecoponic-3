@@ -388,12 +388,23 @@ export class Viewer {
   }
 
   frame(animate = false) {
-    const box = new Box3().setFromObject(this.model);
+    this.model.updateMatrixWorld(true);
+    const box = new Box3();
+    this.model.traverse((node) => {
+      if (!node.isMesh) return;
+      let cursor = node;
+      while (cursor) {
+        if (cursor.userData?.isLabel) return;
+        cursor = cursor.parent;
+      }
+      box.expandByObject(node);
+    });
+    if (box.isEmpty()) box.setFromObject(this.model);
     if (box.isEmpty()) return;
     const size = box.getSize(new Vector3());
     const target = box.getCenter(new Vector3());
     const maxDim = Math.max(size.x, size.y, size.z, 0.6);
-    const dist = (maxDim / (2 * Math.tan((this.camera.fov * Math.PI) / 360))) * 1.38;
+    const dist = (maxDim / (2 * Math.tan((this.camera.fov * Math.PI) / 360))) * 1.16;
     const pos = new Vector3(target.x + dist * 0.72, target.y + Math.max(size.y * 0.35, dist * 0.38), target.z + dist * 0.95);
     this.homePos.copy(pos);
     this.homeTarget.copy(target);

@@ -446,7 +446,25 @@ export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", d
   const rim = M(new TorusGeometry(radius, 0.028, 10, 40), metalMaterial("#b0bec5", 0.75, 0.3), 0, height + 0.08, 0);
   spin(rim, Math.PI / 2, 0, 0);
   g.add(base, wall, liquid, rim);
-  const shell = metalMaterial("#b0bec5", 0.8, 0.28);
+  const shell = metalMaterial("#263238", 0.82, 0.32);
+  const bands = 4;
+  for (let i = 1; i <= bands; i++) {
+    const y = 0.16 + ((height - 0.12) * i) / (bands + 1);
+    const rib = M(new TorusGeometry(radius * 1.035, Math.max(0.022, radius * 0.045), 8, 28), shell, 0, y, 0);
+    rib.rotation.x = Math.PI / 2;
+    g.add(rib);
+  }
+  const dome = M(new SphereGeometry(radius * 0.98, seg(28, 14), seg(16, 8), 0, Math.PI * 2, 0, Math.PI / 2), wallMat, 0, height + 0.08, 0);
+  g.add(dome);
+  const ladderZ = -(radius + 0.07);
+  g.add(M(new CylinderGeometry(0.015, 0.015, height * 0.82, 6), shell, -0.1, height * 0.48, ladderZ));
+  g.add(M(new CylinderGeometry(0.015, 0.015, height * 0.82, 6), shell, 0.1, height * 0.48, ladderZ));
+  const rungs = isFast() ? 4 : 6;
+  for (let i = 0; i < rungs; i++) {
+    const rung = M(new CylinderGeometry(0.01, 0.01, 0.22, 6), shell, 0, 0.22 + i * ((height * 0.7) / rungs), ladderZ);
+    rung.rotation.z = Math.PI / 2;
+    g.add(rung);
+  }
   const legY = 0.1;
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2 + 0.4;
@@ -466,8 +484,8 @@ export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", d
   gauge.rotation.z = Math.PI / 2;
   g.add(gauge);
   g.add(M(new CylinderGeometry(0.035, 0.035, 0.01, 10), paint({}, dirty ? "#e53935" : "#43a047"), radius * 0.76, height * 0.78, 0));
-  const portRight = addNozzle(g, new Vector3(radius, height * 0.7, 0), new Vector3(1, 0, 0), Math.max(0.045, radius * 0.1), shell);
-  const portLeft = addNozzle(g, new Vector3(-radius, height * 0.4, 0), new Vector3(-1, 0, 0), Math.max(0.045, radius * 0.1), shell);
+  const portRight = addNozzle(g, new Vector3(radius, height * 0.7, 0), new Vector3(1, 0, 0), Math.max(0.07, radius * 0.16), shell);
+  const portLeft = addNozzle(g, new Vector3(-radius, height * 0.4, 0), new Vector3(-1, 0, 0), Math.max(0.07, radius * 0.16), shell);
   if (dirty) {
     const speck = paint({}, "#5d4037", "rubber");
     for (let i = 0; i < 8; i++) {
@@ -475,7 +493,7 @@ export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", d
       g.add(M(new SphereGeometry(0.03, 8, 8), speck, Math.cos(a) * radius * 0.45, 0.25 + (i % 3) * 0.18, Math.sin(a) * radius * 0.45));
     }
   }
-  g.userData.top = height + 0.2;
+  g.userData.top = height + 0.08 + radius * 0.98;
   g.userData.radius = radius;
   g.userData.portRight = portRight;
   g.userData.portLeft = portLeft;
@@ -557,6 +575,10 @@ function house(spec, ctx) {
   roofMesh.position.set(0, 0.98, -0.72);
   roofMesh.castShadow = true;
   g.add(roofMesh);
+  g.add(M(new BoxGeometry(0.1, 0.1, 1.5), paint({}, "#5d4037", "wood"), 0, 1.62, 0));
+  g.add(M(new BoxGeometry(0.1, 0.95, 0.1), paint({}, "#efebe9", "stone"), -0.62, 0.5, 0.82));
+  g.add(M(new BoxGeometry(0.1, 0.95, 0.1), paint({}, "#efebe9", "stone"), 0.62, 0.5, 0.82));
+  g.add(M(new BoxGeometry(1.45, 0.07, 0.62), paint({}, "#b5442f"), 0, 0.98, 0.9));
   g.add(M(new BoxGeometry(0.18, 0.4, 0.18), paint({}, "#8d6e63", "stone"), 0.48, 1.35, -0.15));
   g.add(M(new BoxGeometry(0.55, 0.06, 0.28), paint({}, "#9e9e9e", "stone"), 0, 0.04, 0.78));
   const wins = Math.max(2, Math.min(4, spec.windows || 2));
@@ -713,8 +735,10 @@ function tree(spec) {
     g.add(M(new ConeGeometry(0.36, 0.55, 12), green, 0, 1.35, 0));
     return g;
   }
-  g.add(...foliage(spec.color || "#43a047", 0, 1.05, 0, 0.42));
-  g.add(...foliage(spec.color || "#2e7d32", 0.18, 1.28, -0.08, 0.28));
+  g.add(...foliage(spec.color || "#43a047", 0, 1.05, 0, 0.48));
+  g.add(...foliage(spec.color || "#2e7d32", 0.22, 1.32, -0.1, 0.32));
+  g.add(...foliage(spec.color || "#1b5e20", -0.2, 1.18, 0.12, 0.3));
+  g.add(...foliage(spec.color || "#66bb6a", 0.05, 1.48, 0.05, 0.22));
   return g;
 }
 
@@ -775,6 +799,19 @@ function building(spec, ctx) {
     }
   }
   g.add(M(new BoxGeometry(w + 0.1, 0.06, d + 0.1), new MeshStandardMaterial({ color: spec.variant === "school" ? "#ef6c00" : "#607d8b", roughness: 0.7 }), 0, y0 + h + 0.03, 0));
+  const ledge = paint({}, "#f5f5f5", "stone");
+  const stripe = Math.max(1, Math.ceil(floors / (isFast() ? 8 : 14)));
+  for (let f = 1; f < floors; f += stripe) {
+    g.add(M(new BoxGeometry(w + 0.2, 0.04, d + 0.2), ledge, 0, y0 + f * fh, 0));
+  }
+  const pier = paint({}, "#263238", "metal");
+  const bays = spec.variant === "factory" ? 5 : spec.variant === "tower" ? 2 : 4;
+  for (let c = 0; c <= bays; c++) {
+    const x = -w / 2 + (c / bays) * w;
+    if (Math.abs(x) < 0.12) continue;
+    g.add(M(new BoxGeometry(0.035, h, 0.05), pier, x, y0 + h / 2, d / 2 + 0.02));
+    g.add(M(new BoxGeometry(0.035, h, 0.05), pier, x, y0 + h / 2, -d / 2 - 0.02));
+  }
   const cols = spec.variant === "tower" ? 2 : spec.variant === "factory" ? 5 : spec.variant === "skyscraper" ? 4 : spec.windows ? Math.max(2, Math.min(6, spec.windows)) : 4;
   addFacadeWindows(g, {
     floors,
@@ -788,6 +825,9 @@ function building(spec, ctx) {
   });
   const doorW = spec.variant === "factory" ? 0.55 : 0.32;
   const doorH = spec.variant === "factory" ? 0.48 : Math.min(0.72, fh * 0.85);
+  g.add(M(new BoxGeometry(Math.min(0.9, w * 0.7), 0.05, 0.46), paint({}, "#37474f", "metal"), 0, y0 + doorH + 0.12, d / 2 + 0.22));
+  g.add(M(new BoxGeometry(0.05, doorH + 0.08, 0.05), pier, -0.32, y0 + doorH / 2, d / 2 + 0.4));
+  g.add(M(new BoxGeometry(0.05, doorH + 0.08, 0.05), pier, 0.32, y0 + doorH / 2, d / 2 + 0.4));
   addEntryDoor(g, {
     x: 0,
     z: open ? d / 2 - 0.04 : d / 2 + 0.03,
@@ -1579,9 +1619,9 @@ function screen(spec) {
 
 export function buildClassroom(spec) {
   const g = G("Classroom");
-  const W = 3.5;
-  const D = 2.55;
-  const H = 1.42;
+  const W = 4.6;
+  const D = 3.2;
+  const H = 1.75;
   const wall = facadeMaterial({}, "#f7f1e6", "plaster");
   const trim = paint({}, "#cfd8dc", "stone");
   g.add(M(new BoxGeometry(W + 0.16, 0.08, D + 0.16), paint({}, "#b08968", "wood"), 0, 0.04, 0));
@@ -1600,10 +1640,10 @@ export function buildClassroom(spec) {
   g.add(M(new BoxGeometry(0.82, 0.46, 0.02), paint({}, "#1565c0"), 0.85, 0.98, -D / 2 + 0.12));
   g.add(M(new BoxGeometry(0.4, 0.06, 0.012), paint({}, "#ffffff"), 0.7, 1.08, -D / 2 + 0.14));
   addEntryDoor(g, { x: -W / 2 + 0.02, z: 0.35, yaw: Math.PI / 2, width: 0.36, height: 0.78, material: "wood", color: "#6d4c41" });
-  for (const z of [-0.4, 0.45]) {
+  for (const z of [-0.85, 0.05, 0.9]) {
     const win = windowObj({ material: "glass" });
-    win.scale.setScalar(0.62);
-    win.position.set(W / 2 - 0.16, 0.15, z);
+    win.scale.set(0.7, 0.95, 0.7);
+    win.position.set(W / 2 - 0.12, 0.22, z);
     win.rotation.y = -Math.PI / 2;
     g.add(win);
   }
@@ -1630,16 +1670,16 @@ export function buildClassroom(spec) {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (n >= desks) break;
-      const x = -0.85 + c * 0.7;
-      const z = 0.15 + r * 0.62;
+      const x = -1.15 + c * 0.95;
+      const z = 0.2 + r * 0.85;
       const desk = table({ material: "wood", color: "#c4a574" });
-      desk.scale.set(0.42, 0.72, 0.48);
+      desk.scale.set(0.52, 0.78, 0.55);
       desk.position.set(x, 0, z);
       desk.add(M(new BoxGeometry(0.16, 0.03, 0.12), paint({}, n % 2 ? "#5c6bc0" : "#e53935"), 0.12, 0.84, 0));
       desk.add(M(new CylinderGeometry(0.03, 0.035, 0.06, 8), paint({}, "#fff8e1", "ceramic"), -0.12, 0.86, 0.04));
       g.add(desk);
       const seat = chair({ material: "wood", color: "#1e88e5" });
-      seat.scale.setScalar(0.72);
+      seat.scale.setScalar(0.88);
       seat.position.set(x, 0, z + 0.28);
       seat.rotation.y = Math.PI;
       g.add(seat);
@@ -1751,7 +1791,7 @@ export function buildFiltration(spec, ctx) {
     color: flowColor,
     tubeColor,
     speed: 0.16,
-    tubeRadius: 0.058,
+    tubeRadius: 0.086,
     arrowColor: flowColor,
     arrowLength: 0.16,
     arrowRadius: 0.048,
@@ -1905,12 +1945,16 @@ export function buildFiltration(spec, ctx) {
   g.add(legend);
 
   const span = width + 2.8;
-  g.add(M(new RoundedBoxGeometry(Math.max(span, 3.4), 0.1, 3.15, 3, 0.02), metalMaterial("#263238", 0.5, 0.55), 0, 0.03, 0.35));
-  for (const x of [-span / 2, span / 2]) {
-    g.add(M(new CylinderGeometry(0.06, 0.07, 0.08, 10), metalMaterial("#455a64", 0.6, 0.4), x, 0.04, -0.7));
-    g.add(M(new CylinderGeometry(0.06, 0.07, 0.08, 10), metalMaterial("#455a64", 0.6, 0.4), x, 0.04, 1.3));
+  const skid = metalMaterial("#37474f", 0.62, 0.42);
+  const deckW = Math.max(span, 3.4);
+  g.add(M(new BoxGeometry(deckW, 0.06, 2.7), metalMaterial("#263238", 0.45, 0.6), 0, 0.08, 0.28));
+  g.add(M(new BoxGeometry(deckW, 0.1, 0.1), skid, 0, 0.04, -0.95));
+  g.add(M(new BoxGeometry(deckW, 0.1, 0.1), skid, 0, 0.04, 1.45));
+  for (let i = 0; i < 5; i++) {
+    const x = -deckW / 2 + (i + 0.5) * (deckW / 5);
+    g.add(M(new BoxGeometry(0.08, 0.1, 2.5), skid, x, 0.04, 0.25));
   }
-  g.rotation.y = 0.42;
+  g.rotation.y = 0.28;
   return g;
 }
 
