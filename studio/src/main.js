@@ -13,6 +13,51 @@ let presetId = null;
 let parsed = null;
 let fileTitle = "";
 let busy = false;
+let panelOpen = true;
+
+function narrowScreen() {
+  return window.matchMedia("(max-width: 1100px)").matches;
+}
+
+function applyTheme(theme) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", next === "light" ? "#eceff3" : "#16181c");
+}
+
+function applyPanel() {
+  const app = $("app");
+  app.classList.toggle("panel-open", panelOpen);
+  app.classList.toggle("panel-closed", !panelOpen);
+  const btn = $("panelToggle");
+  if (!btn) return;
+  btn.setAttribute("aria-expanded", String(panelOpen));
+  $("panelToggleLabel").textContent = t(lang, panelOpen ? "hidePanel" : "showPanel");
+  btn.setAttribute("aria-label", t(lang, panelOpen ? "hidePanelFull" : "showPanelFull"));
+  const grip = $("sheetGrip");
+  if (grip) grip.setAttribute("aria-label", t(lang, "hidePanelFull"));
+  const panel = $("studioPanel");
+  if (panel) panel.inert = !panelOpen;
+}
+
+function syncStatus() {
+  const node = $("status");
+  if (!node) return;
+  node.classList.toggle("busy", busy);
+  $("statusText").textContent = t(lang, busy ? "statusGenerating" : "statusReady");
+  const gen = $("btnGenerate");
+  gen.disabled = busy;
+  gen.querySelector("span").textContent = t(lang, busy ? "generating" : "generate");
+  gen.setAttribute("aria-label", t(lang, busy ? "generating" : "generate"));
+  const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  const themeKey = theme === "light" ? "themeToDark" : "themeToLight";
+  const themeFull = theme === "light" ? "themeToDarkFull" : "themeToLightFull";
+  $("themeLabel").textContent = t(lang, themeKey);
+  $("themeBtn").setAttribute("aria-label", t(lang, themeFull));
+  $("themeBtn").setAttribute("title", t(lang, themeFull));
+  applyPanel();
+}
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
@@ -39,8 +84,7 @@ function setProgress(amount, key) {
 function setBusy(on) {
   busy = on;
   $("loading").classList.toggle("hidden", !on);
-  $("btnGenerate").disabled = on;
-  $("btnGenerate").querySelector("span").textContent = t(lang, on ? "generating" : "generate");
+  syncStatus();
 }
 
 function applyStaticText() {
@@ -52,10 +96,6 @@ function applyStaticText() {
   });
   document.querySelectorAll("[data-i18n-ph]").forEach((node) => {
     node.setAttribute("placeholder", t(lang, node.dataset.i18nPh));
-  });
-  document.querySelectorAll(".tbtn, #langBtn").forEach((button) => {
-    const span = button.querySelector("[data-i18n]");
-    if (span) button.setAttribute("aria-label", span.textContent);
   });
   const light = $("lightPreset");
   const current = light.value || "studio";
@@ -70,6 +110,11 @@ function applyStaticText() {
   $("flowSwitch").setAttribute("aria-label", t(lang, "flowView"));
   $("btnFlowStatic").title = t(lang, "flowStaticTitle");
   $("btnFlowLive").title = t(lang, "flowLiveTitle");
+  syncStatus();
+  document.querySelectorAll(".tbtn, #langBtn, #btnFlowStatic, #btnFlowLive, #btnClear").forEach((button) => {
+    const span = button.querySelector("[data-i18n]");
+    if (span?.textContent) button.setAttribute("aria-label", span.textContent);
+  });
 }
 
 function renderExamples() {
@@ -78,12 +123,13 @@ function renderExamples() {
   for (const example of EXAMPLES[lang]) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "chip";
-    button.textContent = example;
+    button.className = "example-card";
     button.dir = "auto";
+    button.title = example.text;
+    button.innerHTML = `<span class="et">${escapeHtml(example.title)}</span><span class="ed">${escapeHtml(example.text)}</span>`;
     button.addEventListener("click", () => {
-      prompt.value = example;
-      generate(example, { preset: null });
+      prompt.value = example.text;
+      generate(example.text, { preset: null });
     });
     host.appendChild(button);
   }
@@ -182,6 +228,7 @@ function persist() {
     labels: $("btnLabels").classList.contains("on"),
     grid: $("btnGrid").classList.contains("on"),
     flowLive: $("btnFlowLive").classList.contains("on"),
+    theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
   });
 }
 
@@ -189,10 +236,18 @@ async function generate(text, { preset = null, keepCamera = false } = {}) {
   const value = (text ?? prompt.value).trim();
   if (!value) {
     prompt.focus();
+    if (narrowScreen() && !panelOpen) {
+      panelOpen = true;
+      applyPanel();
+    }
     toast(t(lang, "emptyBody"), true);
     return;
   }
   prompt.value = value;
+  if (narrowScreen()) {
+    panelOpen = false;
+    applyPanel();
+  }
   presetId = preset;
   fileTitle = "";
   const previous = keepCamera
@@ -290,6 +345,9 @@ function downloadBlob(blob, name) {
 async function boot() {
   const saved = loadState();
   lang = saved.lang === "en" ? "en" : "ar";
+  const storedTheme = saved.theme === "light" || saved.theme === "dark" ? saved.theme : "";
+  applyTheme(storedTheme || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+  panelOpen = !narrowScreen();
   applyStaticText();
   renderExamples();
   renderPresets();
@@ -428,6 +486,10 @@ async function boot() {
       parsed = null;
       presetId = null;
       fileTitle = file.name;
+      if (narrowScreen()) {
+        panelOpen = false;
+        applyPanel();
+      }
       $("emptyState").classList.add("hidden");
       renderUnderstood();
       renderPresets();
@@ -458,7 +520,36 @@ async function boot() {
     viewer.setShadows($("shadows").checked);
     persist();
   });
+  $("themeBtn").addEventListener("click", () => {
+    applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+    syncStatus();
+    persist();
+  });
+  $("panelToggle").addEventListener("click", () => {
+    panelOpen = !panelOpen;
+    applyPanel();
+    if (panelOpen && narrowScreen()) setTimeout(() => prompt.focus(), 250);
+  });
+  $("sheetScrim").addEventListener("click", () => {
+    panelOpen = false;
+    applyPanel();
+  });
+  $("sheetGrip").addEventListener("click", () => {
+    panelOpen = false;
+    applyPanel();
+  });
+  window.matchMedia("(max-width: 1100px)").addEventListener("change", (event) => {
+    panelOpen = !event.matches;
+    applyPanel();
+    viewer.resize();
+  });
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && panelOpen && narrowScreen()) {
+      if (event.target.matches("textarea, input, select")) event.target.blur();
+      panelOpen = false;
+      applyPanel();
+      return;
+    }
     if (event.target.matches("textarea, input, select")) return;
     if (event.key === "r") viewer.resetCamera();
     if (event.key === "f") toggleFullscreen();
