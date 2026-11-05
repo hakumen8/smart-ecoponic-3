@@ -22,6 +22,7 @@ let apiAbort = null;
 let fromApi = false;
 let panelOpen = true;
 let quality = "high";
+let showInterior = false;
 let panelWidth = 332;
 let selectedPartId = null;
 
@@ -125,6 +126,11 @@ function applyStaticText() {
   $("flowSwitch").setAttribute("aria-label", t(lang, "flowView"));
   $("btnFlowStatic").title = t(lang, "flowStaticTitle");
   $("btnFlowLive").title = t(lang, "flowLiveTitle");
+  const interiorBtn = $("btnInterior");
+  if (interiorBtn) {
+    interiorBtn.title = t(lang, "showInteriorTitle");
+    interiorBtn.setAttribute("aria-label", t(lang, "showInterior"));
+  }
   syncStatus();
   document.querySelectorAll(".tbtn, #langBtn, #btnFlowStatic, #btnFlowLive, #btnClear").forEach((button) => {
     const span = button.querySelector("[data-i18n]");
@@ -203,7 +209,13 @@ function renderUnderstood() {
     bits.push(`<span class="tag">🌱 ${escapeHtml(objectName(lang, "aquaponics"))}</span>`);
     bits.push(`<span class="tag">${parsed.aquaponics.fish} × ${escapeHtml(objectName(lang, "fish"))}</span>`);
     bits.push(`<span class="tag">${parsed.aquaponics.plants} × ${escapeHtml(objectName(lang, "plant"))}</span>`);
+  } else if (parsed.mode === "classroom") {
+    bits.push(`<span class="tag">📚 ${escapeHtml(t(lang, "classroomTitle"))}</span>`);
+    bits.push(`<span class="tag">${parsed.classroom?.desks || 6} × ${escapeHtml(objectName(lang, "table"))}</span>`);
+    bits.push(`<span class="tag">${escapeHtml(objectName(lang, "board"))}</span>`);
+    bits.push(`<span class="tag">${escapeHtml(objectName(lang, "screen"))}</span>`);
   }
+  if (showInterior || parsed.interior) bits.push(`<span class="tag">${escapeHtml(t(lang, "showInterior"))}</span>`);
   for (const obj of parsed.objects || []) {
     const swatch = obj.color ? `<span class="sw" style="background:${obj.color}"></span>` : "";
     const notes = [
@@ -227,6 +239,7 @@ function modelTitle() {
   if (!parsed) return "";
   if (parsed.mode === "filtration") return t(lang, "filtrationTitle");
   if (parsed.mode === "aquaponics") return t(lang, "aquaponicsTitle");
+  if (parsed.mode === "classroom") return t(lang, "classroomTitle");
   return (parsed.objects || [])
     .map((obj) => `${obj.count > 1 ? `${obj.count}× ` : ""}${objectName(lang, obj.type)}`)
     .join(" + ");
@@ -261,6 +274,8 @@ function fileName(ext) {
     ? "filtration"
     : parsed?.mode === "aquaponics"
       ? "aquaponics"
+      : parsed?.mode === "classroom"
+        ? "classroom"
       : (parsed?.objects || []).map((obj) => obj.type).join("-")) || "model";
   return `${base.slice(0, 48)}.${ext}`;
 }
@@ -279,6 +294,7 @@ function persist() {
     labels: $("btnLabels").classList.contains("on"),
     grid: $("btnGrid").classList.contains("on"),
     flowLive: $("btnFlowLive").classList.contains("on"),
+    showInterior,
     theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
     quality,
     panelWidth,
@@ -318,6 +334,7 @@ async function generate(text, { preset = null, keepCamera = false } = {}) {
       lang,
       tr: (key) => t(lang, key),
       layer: (id) => layerName(lang, id),
+      interior: showInterior,
     });
     setProgress(0.82, "progressPlace");
     await sleep(16);
@@ -349,6 +366,19 @@ async function generate(text, { preset = null, keepCamera = false } = {}) {
     toast(error?.message || t(lang, "exportFail"), true);
   } finally {
     setBusy(false);
+  }
+}
+
+function setInterior(on, { persistNow = true, regenerate = true } = {}) {
+  showInterior = !!on;
+  const button = $("btnInterior");
+  if (button) {
+    button.classList.toggle("on", showInterior);
+    button.setAttribute("aria-pressed", String(showInterior));
+  }
+  if (persistNow) persist();
+  if (regenerate && !fromApi && prompt.value.trim() && !busy) {
+    generate(prompt.value, { preset: presetId, keepCamera: true });
   }
 }
 
@@ -393,11 +423,19 @@ async function toggleFullscreen() {
 }
 
 function downloadBlob(blob, name) {
+  if (!(blob instanceof Blob) || blob.size < 16) throw new Error("empty file");
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
+  link.href = url;
   link.download = name;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+  setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 120000);
 }
 
 function colorInputValue(hex) {
@@ -609,13 +647,16 @@ function closeExportMenu() {
   $("dockExport").setAttribute("aria-expanded", "false");
 }
 
-function exportPNG(options) {
+async function exportPNG(options) {
   if (!viewer.hasModel()) return toast(t(lang, "emptyBody"), true);
-  const link = document.createElement("a");
-  link.href = viewer.screenshot(options);
-  link.download = fileName("png");
-  link.click();
-  toast(t(lang, "exported"));
+  try {
+    const blob = await viewer.capturePNG(options);
+    downloadBlob(blob, fileName("png"));
+    toast(t(lang, "exported"));
+  } catch (error) {
+    console.error(error);
+    toast(t(lang, "exportFail"), true);
+  }
 }
 
 async function exportGLB() {
@@ -793,6 +834,7 @@ function renderShortcutList() {
     ["G", "grid"],
     ["A", "autoRotate"],
     ["1 / 2", "flowStatic"],
+    ["I", "showInterior"],
     ["H", "showPanel"],
     ["Q", "quality"],
     ["S", "share"],
@@ -866,6 +908,7 @@ async function boot() {
     viewer.setWireframe(true);
   }
   setFlowMode(saved.flowLive === true, { persistNow: false });
+  setInterior(saved.showInterior === true, { persistNow: false, regenerate: false });
 
   $("promptForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1008,6 +1051,7 @@ async function boot() {
   });
   $("btnFlowStatic").addEventListener("click", () => setFlowMode(false));
   $("btnFlowLive").addEventListener("click", () => setFlowMode(true));
+  $("btnInterior").addEventListener("click", () => setInterior(!showInterior));
   bindToggle("btnRotate", (on) => viewer.setAutoRotate(on));
   bindToggle("btnWire", (on) => viewer.setWireframe(on));
   bindToggle("btnLabels", (on) => viewer.setLabels(on));
@@ -1179,6 +1223,7 @@ async function boot() {
     else if (key === "s") shareLink();
     else if (event.key === "1") setFlowMode(false);
     else if (event.key === "2") setFlowMode(true);
+    else if (key === "i") setInterior(!showInterior);
   });
 
   if (document.fonts?.ready) await document.fonts.ready;

@@ -53,6 +53,88 @@ function grain(base, speck, count, rMin, rMax) {
   });
 }
 
+function brickMap(hex) {
+  return canvasTexture(`brick:${hex}`, (ctx, w, h) => {
+    ctx.fillStyle = "#c9b8a4";
+    ctx.fillRect(0, 0, w, h);
+    const bw = 46;
+    const bh = 22;
+    for (let row = 0; row < h / bh + 1; row++) {
+      const offset = row % 2 ? bw / 2 : 0;
+      for (let col = -1; col < w / bw + 1; col++) {
+        const x = col * bw + offset + 2;
+        const y = row * bh + 2;
+        ctx.fillStyle = hash(row * 17 + col) > 0.82 ? shade(hex, -1) : hash(row + col * 3) > 0.5 ? hex : shade(hex, 1);
+        ctx.fillRect(x, y, bw - 4, bh - 4);
+      }
+    }
+  });
+}
+
+function plasterMap(hex) {
+  return canvasTexture(`plaster:${hex}`, (ctx, w, h) => {
+    ctx.fillStyle = hex;
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 900; i++) {
+      const x = hash(i + 1) * w;
+      const y = hash(i + 4) * h;
+      ctx.fillStyle = hash(i + 6) > 0.5 ? "rgba(255,255,255,0.09)" : "rgba(80,60,40,0.06)";
+      ctx.fillRect(x, y, 1 + hash(i) * 2, 1 + hash(i + 2) * 2);
+    }
+    ctx.strokeStyle = "rgba(90,70,50,0.18)";
+    ctx.strokeRect(8, 8, w - 16, h - 16);
+  });
+}
+
+function ribMap(hex) {
+  return canvasTexture(`rib:${hex}`, (ctx, w, h) => {
+    for (let x = 0; x < w; x += 8) {
+      const grad = ctx.createLinearGradient(x, 0, x + 8, 0);
+      grad.addColorStop(0, shade(hex, -1));
+      grad.addColorStop(0.45, hex);
+      grad.addColorStop(1, shade(hex, 1));
+      ctx.fillStyle = grad;
+      ctx.fillRect(x, 0, 8, h);
+    }
+  });
+}
+
+function fabricMap(hex) {
+  return canvasTexture(`fabric:${hex}`, (ctx, w, h) => {
+    ctx.fillStyle = hex;
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(0,0,0,0.14)";
+    for (let i = 0; i < w; i += 4) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, h);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(w, i);
+      ctx.stroke();
+    }
+  });
+}
+
+function solarMap(hex) {
+  return canvasTexture(`solar:${hex}`, (ctx, w, h) => {
+    ctx.fillStyle = shade(hex, -1);
+    ctx.fillRect(0, 0, w, h);
+    const cols = 6;
+    const rows = 8;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        ctx.fillStyle = hash(r * 9 + c) > 0.85 ? shade(hex, 1) : hex;
+        ctx.fillRect(8 + c * ((w - 16) / cols), 6 + r * ((h - 12) / rows), (w - 16) / cols - 4, (h - 12) / rows - 3);
+      }
+    }
+    ctx.strokeStyle = "#eceff1";
+    ctx.lineWidth = 6;
+    ctx.strokeRect(2, 2, w - 4, h - 4);
+  });
+}
+
 function woodMap(hex) {
   return canvasTexture(`wood:${hex}`, (ctx, w, h) => {
     ctx.fillStyle = hex;
@@ -384,13 +466,76 @@ export function paint(spec = {}, fallback = "#90a4c8", kind) {
       metalness: 0.02,
     });
   }
-  if (materialKind === "rubber" || materialKind === "fabric") {
+  if (materialKind === "fabric") {
+    return new MeshStandardMaterial({ color: "#ffffff", map: fabricMap(color), roughness: 0.94, metalness: 0 });
+  }
+  if (materialKind === "rubber") {
     return new MeshStandardMaterial({ color, roughness: 0.96, metalness: 0 });
   }
   if (materialKind === "ceramic") {
-    return new MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.05 });
+    return new MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.04 });
   }
-  return new MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.05 });
+  return new MeshStandardMaterial({ color, roughness: 0.42, metalness: 0.06 });
+}
+
+export function windowGlass(tint = "#d7ecff") {
+  if (isFast()) {
+    return new MeshStandardMaterial({
+      color: tint,
+      emissive: "#ffd59a",
+      emissiveIntensity: 0.55,
+      roughness: 0.06,
+      metalness: 0.12,
+      transparent: true,
+      opacity: 0.78,
+    });
+  }
+  return new MeshPhysicalMaterial({
+    color: tint,
+    emissive: "#ffcc80",
+    emissiveIntensity: 0.32,
+    roughness: 0.04,
+    metalness: 0.06,
+    transmission: 0.72,
+    thickness: 0.22,
+    transparent: true,
+    opacity: 0.92,
+    envMapIntensity: 1,
+  });
+}
+
+export function facadeMaterial(spec = {}, fallback = "#d9c7b0", style = "plaster") {
+  const kind = spec.material;
+  const color = shade(spec.color || fallback, spec.lightness || 0);
+  if (spec.glow || kind === "glow") return glowingMaterial(color);
+  if (kind === "glass" || style === "curtain") {
+    return new MeshStandardMaterial({
+      color,
+      roughness: 0.14,
+      metalness: 0.48,
+      emissive: color,
+      emissiveIntensity: 0.14,
+    });
+  }
+  if (kind === "metal" || style === "metal") {
+    return new MeshStandardMaterial({ color: "#ffffff", map: ribMap(color), metalness: 0.62, roughness: 0.38 });
+  }
+  if (kind === "wood" || style === "wood") return paint({ ...spec, color, material: "wood" }, color, "wood");
+  if (kind === "stone" || style === "brick") {
+    return new MeshStandardMaterial({ color: "#ffffff", map: brickMap(color), roughness: 0.92, metalness: 0.02 });
+  }
+  return new MeshStandardMaterial({ color: "#ffffff", map: plasterMap(color), roughness: 0.88, metalness: 0.02 });
+}
+
+export function solarCellMaterial(hex = "#1565c0") {
+  return new MeshStandardMaterial({
+    color: "#ffffff",
+    map: solarMap(hex),
+    roughness: 0.28,
+    metalness: 0.45,
+    emissive: hex,
+    emissiveIntensity: 0.12,
+  });
 }
 
 export function layerMaterial(id, accent) {

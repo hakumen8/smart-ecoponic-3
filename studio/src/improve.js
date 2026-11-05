@@ -42,8 +42,8 @@ const EN_NUM = ["", "a", "two", "three", "four", "five", "six", "seven", "eight"
 const THEMES = [
   {
     keys: ["school", "classroom", "education", "lesson", "student", "مدرسه", "تعليم", "صف", "درس", "طلاب"],
-    en: "a school building with 3 floors, a wooden door, four glass windows, a wooden table, a chair, a bookshelf and a globe",
-    ar: "مبنى مدرسي من 3 طوابق وباب خشبي وأربع نوافذ زجاجية وطاولة خشبية وكرسي ورف كتب وكرة أرضية",
+    en: "a classroom with desks, chairs, a whiteboard, a screen, a door and windows",
+    ar: "صف دراسي فيه طاولات وكراسي وسبورة وشاشة وباب ونوافذ",
   },
   {
     keys: ["engineer", "engineering", "machine", "mechanical", "هندسه", "هندسي", "محرك", "اله"],
@@ -157,6 +157,11 @@ export function improvePrompt(text) {
   }
   const spec = parsePrompt(raw);
   const norm = normalize(raw);
+  if (spec.mode === "classroom") {
+    return lang === "ar"
+      ? "صف دراسي فيه طاولات وكراسي وسبورة وشاشة وباب ونوافذ"
+      : "a classroom with desks, chairs, a whiteboard, a screen, a door and windows";
+  }
   if (spec.mode === "filtration") return filtrationText(spec.filtration?.tanks, lang);
   if (spec.mode === "aquaponics") return aquaponicsText(spec, lang);
   if (spec.unknown) {

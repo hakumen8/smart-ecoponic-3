@@ -29,7 +29,8 @@ import {
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { FILTER_STACK } from "./i18n.js";
 import { buildFilterColumn, addFlow, buildWasteBin } from "./filter-scene.js";
-import { glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, waterMaterial } from "./materials.js";
+import { addCutCaps, addEntryDoor, addFacadeWindows, addShellInterior, buildGearGroup, cylinderBody, showInside } from "./details.js";
+import { facadeMaterial, glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, solarCellMaterial, waterMaterial, windowGlass } from "./materials.js";
 import { rng } from "./parser.js";
 import { isFast, seg } from "./quality.js";
 
@@ -161,37 +162,41 @@ function fishMesh(color = "#ff8a65") {
 
 function windowGrid(floors, cols, w, h, d, y0) {
   const fw = w / (cols + 0.4);
-  const fh = 0.1;
-  const mat = new MeshStandardMaterial({
-    color: "#d7ecff",
-    emissive: "#ffcc80",
-    emissiveIntensity: 0.35,
-    roughness: 0.15,
-    metalness: 0.05,
-  });
-  const geo = new BoxGeometry(fw * 0.55, fh, 0.03);
+  const fh = Math.min(0.18, (h / Math.max(floors, 1)) * 0.46);
+  const glass = windowGlass("#d7ecff");
+  const frameMat = new MeshStandardMaterial({ color: "#1b242c", roughness: 0.4, metalness: 0.35 });
   const count = floors * cols * 2;
-  const inst = new InstancedMesh(geo, mat, count);
-  inst.castShadow = false;
-  inst.receiveShadow = false;
+  const frames = new InstancedMesh(new BoxGeometry(fw * 0.7, fh + 0.03, 0.028), frameMat, count);
+  const panes = new InstancedMesh(new BoxGeometry(fw * 0.56, fh, 0.016), glass, count);
   const dummy = new Object3D();
   let n = 0;
   for (let f = 0; f < floors; f++) {
     for (let c = 0; c < cols; c++) {
       const x = -w / 2 + fw * 0.7 + c * fw;
-      const y = y0 + f * (h / floors) + h / floors * 0.55;
+      const y = y0 + f * (h / floors) + (h / floors) * 0.58;
       dummy.position.set(x, y, d / 2 + 0.02);
+      dummy.rotation.set(0, 0, 0);
       dummy.updateMatrix();
-      inst.setMatrixAt(n++, dummy.matrix);
+      frames.setMatrixAt(n, dummy.matrix);
+      panes.setMatrixAt(n, dummy.matrix);
+      n += 1;
       dummy.position.set(x, y, -d / 2 - 0.02);
       dummy.rotation.y = Math.PI;
       dummy.updateMatrix();
-      inst.setMatrixAt(n++, dummy.matrix);
-      dummy.rotation.y = 0;
+      frames.setMatrixAt(n, dummy.matrix);
+      panes.setMatrixAt(n, dummy.matrix);
+      n += 1;
     }
   }
-  inst.count = n;
-  return inst;
+  frames.count = n;
+  panes.count = n;
+  frames.instanceMatrix.needsUpdate = true;
+  panes.instanceMatrix.needsUpdate = true;
+  frames.castShadow = true;
+  panes.castShadow = false;
+  const holder = new Group();
+  holder.add(frames, panes);
+  return holder;
 }
 
 export function makeLabel(text, opts) {
@@ -227,19 +232,36 @@ function sphere(spec) {
   return G("Sphere", M(new SphereGeometry(0.55, seg(48, 22), seg(32, 16)), paint(spec, "#ff6b6b"), 0, 0.55, 0));
 }
 
-function cylinder(spec) {
+function cylinder(spec, ctx) {
+  const open = showInside(spec, ctx);
   if (spec.variant === "barrel") {
     const wood = paint(spec, "#8d5a32", "wood");
     const band = metalMaterial("#9aa4ad", 0.8, 0.35);
-    const body = M(new CylinderGeometry(0.42, 0.42, 1.05, 32), wood, 0, 0.55, 0);
-    return G(
+    const body = cylinderBody(0.42, 0.42, 1.05, wood, open, 32);
+    body.position.y = 0.55;
+    const g = G(
       "Barrel",
       body,
       M(new TorusGeometry(0.44, 0.035, 8, 30), band, 0, 0.85, 0),
       M(new TorusGeometry(0.44, 0.035, 8, 30), band, 0, 0.28, 0),
+      M(new CylinderGeometry(0.06, 0.06, 0.04, 12), band, 0.28, 0.95, 0),
     );
+    if (open) addCutCaps(g, 0.42, 1.05, 0.55, wood);
+    return g;
   }
-  return G("Cylinder", M(new CylinderGeometry(0.42, 0.42, 1.15, seg(40, 18)), paint(spec, "#38bdf8"), 0, 0.58, 0));
+  const mat = paint(spec, "#38bdf8");
+  const body = cylinderBody(0.42, 0.42, 1.15, mat, open, seg(40, 18));
+  body.position.y = 0.58;
+  const g = G(
+    "Cylinder",
+    body,
+    M(new TorusGeometry(0.42, 0.02, 8, 28), metalMaterial("#cfd8dc", 0.7, 0.3), 0, 1.14, 0),
+    M(new TorusGeometry(0.42, 0.02, 8, 28), metalMaterial("#cfd8dc", 0.7, 0.3), 0, 0.04, 0),
+  );
+  g.children[1].rotation.x = Math.PI / 2;
+  g.children[2].rotation.x = Math.PI / 2;
+  if (open) addCutCaps(g, 0.42, 1.15, 0.58, mat);
+  return g;
 }
 
 function cone(spec) {
@@ -256,8 +278,12 @@ function torus(spec) {
 function pyramid(spec) {
   const mesh = M(new ConeGeometry(0.72, 1.05, 4), paint(spec, "#e0b354", spec.material || "stone"));
   mesh.rotation.y = Math.PI / 4;
-  mesh.position.y = 0.52;
-  return G("Pyramid", mesh);
+  mesh.position.y = 0.62;
+  return G(
+    "Pyramid",
+    mesh,
+    M(new BoxGeometry(1.15, 0.1, 1.15), paint({}, "#c4b49a", "stone"), 0, 0.05, 0),
+  );
 }
 
 function capsule(spec) {
@@ -295,33 +321,39 @@ function heart(spec) {
   return G("Heart", mesh);
 }
 
-function tank(spec) {
+function tank(spec, ctx) {
   return buildVessel({
     radius: 0.5,
     height: 1.15,
     water: spec.color || "#4fc3f7",
     dirty: false,
+    cutaway: showInside(spec, ctx),
     glass: spec.material === "metal" ? metalMaterial(spec.color || "#90a4ae", 0.7, 0.35) : glassMaterial("#e7f8ff"),
   });
 }
 
-export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", dirty = false, glass }) {
+export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", dirty = false, glass, cutaway = false }) {
   const g = G("Tank");
-  const wall = M(new CylinderGeometry(radius, radius, height, seg(48, 22), 1, true), glass || glassMaterial("#e7f8ff"), 0, height / 2 + 0.08, 0);
-  wall.material.side = DoubleSide;
+  const wallMat = glass || glassMaterial("#e7f8ff");
+  const wall = cutaway
+    ? cylinderBody(radius, radius, height, wallMat, true, seg(48, 22))
+    : M(new CylinderGeometry(radius, radius, height, seg(48, 22), 1, true), wallMat);
+  wall.position.y = height / 2 + 0.08;
+  if (!cutaway) wall.material.side = DoubleSide;
   const base = M(new CylinderGeometry(radius * 1.05, radius * 1.08, 0.08, 32), metalMaterial("#546e7a", 0.7, 0.4), 0, 0.04, 0);
   const waterH = height * (dirty ? 0.78 : 0.7);
-  const liquid = M(
-    new CylinderGeometry(radius * 0.9, radius * 0.9, waterH, seg(36, 16)),
-    waterMaterial(water, dirty),
-    0,
-    0.1 + waterH / 2,
-    0,
-  );
+  const waterMat = waterMaterial(water, dirty);
+  const liquid = cutaway
+    ? cylinderBody(radius * 0.9, radius * 0.9, waterH, waterMat, true, seg(36, 16))
+    : M(new CylinderGeometry(radius * 0.9, radius * 0.9, waterH, seg(36, 16)), waterMat);
+  liquid.position.y = 0.1 + waterH / 2;
   liquid.userData.baseY = liquid.position.y;
   liquid.userData.tick = (t) => {
-    liquid.position.y = liquid.userData.baseY + Math.sin(t * 1.7) * 0.012;
+    liquid.position.y = liquid.userData.baseY + Math.sin(t * 2.4) * 0.02;
+    const pulse = 1 + Math.sin(t * 3.1) * 0.012;
+    liquid.scale.set(pulse, 1, pulse);
   };
+  if (cutaway) addCutCaps(g, radius * 0.9, waterH, liquid.position.y, waterMat);
   const rim = M(new TorusGeometry(radius, 0.028, 10, 40), metalMaterial("#b0bec5", 0.75, 0.3), 0, height + 0.08, 0);
   spin(rim, Math.PI / 2, 0, 0);
   g.add(base, wall, liquid, rim);
@@ -374,31 +406,56 @@ function pump(spec) {
   return g;
 }
 
-function house(spec) {
-  const wall = paint(spec, "#f4ead7");
-  const roof = paint({}, "#b5442f", "stone");
-  const wood = paint({}, "#6b4226", "wood");
-  const glass = glassMaterial("#c8ecff");
-  const body = M(new RoundedBoxGeometry(1.55, 0.95, 1.25, 3, 0.04), wall, 0, 0.5, 0);
+function house(spec, ctx) {
+  const open = showInside(spec, ctx);
+  const wallMat = facadeMaterial(spec, "#f4ead7", spec.material === "brick" || spec.material === "stone" ? "brick" : "plaster");
+  const roof = new MeshStandardMaterial({ color: "#d3543c", roughness: 0.68 });
+  const g = G("House");
+  const w = 1.55;
+  const d = 1.25;
+  const h = 0.95;
+  g.add(M(new BoxGeometry(w + 0.08, 0.08, d + 0.12), paint({}, "#b0a090", "stone"), 0, 0.04, 0));
+  g.add(M(new BoxGeometry(w, h, 0.08), wallMat, 0, 0.5, -d / 2));
+  g.add(M(new BoxGeometry(0.08, h, d), wallMat, -w / 2, 0.5, 0));
+  g.add(M(new BoxGeometry(0.08, h, d), wallMat, w / 2, 0.5, 0));
+  if (!open) g.add(M(new BoxGeometry(w, h, 0.08), wallMat, 0, 0.5, d / 2));
+  else {
+    g.add(M(new BoxGeometry(0.12, h, 0.08), wallMat, -w / 2 + 0.06, 0.5, d / 2));
+    g.add(M(new BoxGeometry(0.12, h, 0.08), wallMat, w / 2 - 0.06, 0.5, d / 2));
+    g.add(M(new BoxGeometry(w, 0.1, 0.08), wallMat, 0, h - 0.02, d / 2));
+  }
   const shape = new Shape([new Vector2(-0.95, 0), new Vector2(0, 0.62), new Vector2(0.95, 0)]);
   const roofGeo = new ExtrudeGeometry(shape, { depth: 1.45, bevelEnabled: false });
   const roofMesh = new Mesh(roofGeo, roof);
   roofMesh.position.set(0, 0.98, -0.72);
   roofMesh.castShadow = true;
-  const door = M(new BoxGeometry(0.32, 0.52, 0.05), wood, 0, 0.3, 0.64);
-  const knob = M(new SphereGeometry(0.03, 10, 8), metalMaterial("#d4af37", 1, 0.25), 0.1, 0.3, 0.68);
-  const winMat = new MeshStandardMaterial({ color: "#b9e6ff", emissive: "#ffd59a", emissiveIntensity: 0.25, roughness: 0.12 });
-  return G(
-    "House",
-    body,
-    roofMesh,
-    door,
-    knob,
-    M(new BoxGeometry(0.32, 0.28, 0.05), winMat, -0.48, 0.58, 0.64),
-    M(new BoxGeometry(0.32, 0.28, 0.05), winMat, 0.48, 0.58, 0.64),
-    M(new BoxGeometry(0.18, 0.4, 0.18), paint({}, "#8d6e63", "stone"), 0.48, 1.35, -0.15),
-    M(new BoxGeometry(0.55, 0.06, 0.28), paint({}, "#9e9e9e", "stone"), 0, 0.04, 0.78),
-  );
+  g.add(roofMesh);
+  g.add(M(new BoxGeometry(0.18, 0.4, 0.18), paint({}, "#8d6e63", "stone"), 0.48, 1.35, -0.15));
+  g.add(M(new BoxGeometry(0.55, 0.06, 0.28), paint({}, "#9e9e9e", "stone"), 0, 0.04, 0.78));
+  const wins = Math.max(2, Math.min(4, spec.windows || 2));
+  addFacadeWindows(g, {
+    floors: 1,
+    cols: wins,
+    width: w * 0.92,
+    depth: d,
+    floorH: h,
+    yBase: 0.08,
+    openFront: open,
+    doorSpan: spec.doors === 0 ? 0 : 1,
+  });
+  addEntryDoor(g, {
+    x: 0,
+    z: open ? d / 2 - 0.02 : d / 2 + 0.02,
+    yaw: open ? -0.8 : 0,
+    width: 0.32,
+    height: 0.58,
+    material: spec.doorMaterial || "wood",
+    color: spec.doorColor,
+  });
+  g.add(M(new BoxGeometry(0.7, 0.04, 0.4), paint({}, "#c4a574", "wood"), -0.15, 0.16, 0));
+  g.add(M(new BoxGeometry(0.28, 0.22, 0.28), paint({}, "#5c6bc0", "fabric"), -0.15, 0.28, 0.22));
+  g.add(M(new BoxGeometry(0.55, 0.02, 0.4), paint({}, "#ef9a9a", "fabric"), 0.35, 0.1, -0.15));
+  return g;
 }
 
 function table(spec) {
@@ -456,12 +513,24 @@ function bed(spec) {
 }
 
 function car(spec) {
+  if (spec.variant === "truck") {
+    const body = paint(spec, "#ef6c00");
+    const g = G("Truck");
+    g.add(M(new RoundedBoxGeometry(1.15, 0.42, 0.9, 3, 0.06), body, -0.35, 0.48, 0));
+    g.add(M(new BoxGeometry(1.15, 0.28, 0.92), paint({}, "#cfd8dc", "metal"), 0.55, 0.5, 0));
+    g.add(M(new BoxGeometry(0.7, 0.2, 0.82), windowGlass("#d7ecff"), -0.35, 0.72, 0));
+    g.add(...[wheel(null, 0.55, 0.22, 0.46), wheel(null, -0.7, 0.22, 0.46), wheel(null, 0.55, 0.22, -0.46), wheel(null, -0.7, 0.22, -0.46)].flat());
+    return g;
+  }
   const body = paint(spec, "#e53935");
   const glass = glassMaterial("#d7f1ff");
   const g = G("Car");
   g.add(M(new RoundedBoxGeometry(1.9, 0.38, 0.86, 3, 0.08), body, 0, 0.42, 0));
   g.add(M(new RoundedBoxGeometry(1.05, 0.36, 0.78, 3, 0.08), body, -0.05, 0.74, 0));
   g.add(M(new BoxGeometry(0.85, 0.22, 0.8), glass, -0.05, 0.78, 0));
+  g.add(M(new BoxGeometry(0.08, 0.1, 0.5), paint({}, "#263238", "metal"), 0.9, 0.4, 0));
+  g.add(M(new BoxGeometry(0.16, 0.05, 0.08), paint({}, "#eceff1"), 0.55, 0.78, 0.4));
+  g.add(M(new BoxGeometry(0.16, 0.05, 0.08), paint({}, "#eceff1"), 0.55, 0.78, -0.4));
   g.add(M(new SphereGeometry(0.05, 12, 10), glowingMaterial("#fff6cc"), 0.9, 0.42, 0.28));
   g.add(M(new SphereGeometry(0.05, 12, 10), glowingMaterial("#fff6cc"), 0.9, 0.42, -0.28));
   g.add(M(new SphereGeometry(0.04, 10, 8), glowingMaterial("#ff5555"), -0.92, 0.42, 0.28));
@@ -518,6 +587,7 @@ function tree(spec) {
     return g;
   }
   g.add(...foliage(spec.color || "#43a047", 0, 1.05, 0, 0.42));
+  g.add(...foliage(spec.color || "#2e7d32", 0.18, 1.28, -0.08, 0.28));
   return g;
 }
 
@@ -526,7 +596,11 @@ function robot(spec) {
   const eye = glowingMaterial(spec.glow ? spec.color || "#7ef9ff" : "#7ef9ff");
   const g = G("Robot");
   g.add(M(new RoundedBoxGeometry(0.7, 0.8, 0.4, 3, 0.06), metal, 0, 0.85, 0));
+  g.add(M(new BoxGeometry(0.28, 0.18, 0.02), paint({}, "#263238", "metal"), 0, 0.9, 0.21));
+  g.add(M(new SphereGeometry(0.08, 12, 10), metal, -0.42, 1.15, 0));
+  g.add(M(new SphereGeometry(0.08, 12, 10), metal, 0.42, 1.15, 0));
   g.add(M(new RoundedBoxGeometry(0.46, 0.36, 0.38, 3, 0.05), metal, 0, 1.45, 0));
+  g.add(M(new BoxGeometry(0.3, 0.06, 0.02), windowGlass("#9be7ff"), 0, 1.5, 0.2));
   g.add(M(new SphereGeometry(0.06, 12, 10), eye, -0.1, 1.48, 0.18));
   g.add(M(new SphereGeometry(0.06, 12, 10), eye, 0.1, 1.48, 0.18));
   g.add(M(new CylinderGeometry(0.02, 0.02, 0.18, 8), metal, 0, 1.72, 0));
@@ -538,31 +612,79 @@ function robot(spec) {
   return g;
 }
 
-function building(spec) {
+function building(spec, ctx) {
   const floors = Math.max(1, spec.floors || (spec.variant === "skyscraper" ? 22 : spec.variant === "tower" ? 12 : spec.variant === "school" ? 3 : spec.variant === "factory" ? 2 : 8));
-  const w = spec.variant === "tower" ? 0.72 : spec.variant === "skyscraper" ? 1.2 : spec.variant === "factory" ? 1.35 : 1.05;
-  const d = spec.variant === "tower" ? 0.72 : spec.variant === "factory" ? 0.7 : 0.86;
-  const fh = spec.variant === "skyscraper" ? 0.22 : 0.26;
+  const open = showInside(spec, ctx);
+  const w = spec.variant === "tower" ? 0.78 : spec.variant === "skyscraper" ? 1.25 : spec.variant === "factory" ? 1.55 : spec.variant === "school" ? 1.35 : 1.12;
+  const d = spec.variant === "tower" ? 0.78 : spec.variant === "factory" ? 0.95 : spec.variant === "school" ? 0.95 : 0.9;
+  const fh = spec.variant === "skyscraper" ? 0.24 : spec.variant === "school" ? 0.42 : 0.3;
   const h = floors * fh;
-  const fallback = spec.variant === "skyscraper" ? "#c5d0dc" : spec.variant === "factory" ? "#546e7a" : spec.variant === "school" ? "#ffe0b2" : "#7f93b5";
-  const body = paint(spec, fallback, spec.material || (spec.variant === "factory" ? "metal" : "stone"));
+  const fallback = spec.variant === "skyscraper" ? "#b7c6d6" : spec.variant === "factory" ? "#607d8b" : spec.variant === "school" ? "#f3e0c4" : spec.variant === "tower" ? "#c5b79a" : "#d7c4b0";
+  const style = spec.material === "glass" || spec.variant === "skyscraper"
+    ? "curtain"
+    : spec.material === "metal" || spec.variant === "factory"
+      ? "metal"
+      : spec.material === "wood"
+        ? "wood"
+        : spec.material === "stone" || spec.variant === "tower"
+          ? "brick"
+          : spec.variant === "school"
+            ? "plaster"
+            : "brick";
+  const body = facadeMaterial(spec, fallback, style);
   const g = G("Building");
-  g.add(M(new BoxGeometry(w, h, d), body, 0, h / 2, 0));
-  g.add(windowGrid(floors, spec.variant === "tower" ? 2 : spec.variant === "factory" ? 5 : 4, w, h, d, 0));
-  g.add(M(new BoxGeometry(w * 0.22, fh * 0.7, 0.04), paint({}, "#4e342e", "wood"), 0, fh * 0.4, d / 2 + 0.02));
+  const y0 = 0.08;
+  g.add(M(new BoxGeometry(w + 0.12, 0.08, d + 0.12), paint({}, "#9e9084", "stone"), 0, 0.04, 0));
+  g.add(M(new BoxGeometry(w, h, 0.08), body, 0, y0 + h / 2, -d / 2));
+  g.add(M(new BoxGeometry(0.08, h, d), body, -w / 2, y0 + h / 2, 0));
+  g.add(M(new BoxGeometry(0.08, h, d), body, w / 2, y0 + h / 2, 0));
+  if (!open) g.add(M(new BoxGeometry(w, h, 0.08), body, 0, y0 + h / 2, d / 2));
+  else {
+    g.add(M(new BoxGeometry(0.1, h, 0.08), body, -w / 2 + 0.05, y0 + h / 2, d / 2));
+    g.add(M(new BoxGeometry(0.1, h, 0.08), body, w / 2 - 0.05, y0 + h / 2, d / 2));
+    g.add(M(new BoxGeometry(w, 0.08, 0.08), body, 0, y0 + h - 0.04, d / 2));
+    for (let f = 1; f < Math.min(floors, 6); f++) {
+      g.add(M(new BoxGeometry(w * 0.92, 0.025, 0.04), paint({}, "#b0bec5", "stone"), 0, y0 + f * fh, d / 2 - 0.02));
+    }
+  }
+  g.add(M(new BoxGeometry(w + 0.1, 0.06, d + 0.1), new MeshStandardMaterial({ color: spec.variant === "school" ? "#ef6c00" : "#607d8b", roughness: 0.7 }), 0, y0 + h + 0.03, 0));
+  const cols = spec.variant === "tower" ? 2 : spec.variant === "factory" ? 5 : spec.variant === "skyscraper" ? 4 : spec.windows ? Math.max(2, Math.min(6, spec.windows)) : 4;
+  addFacadeWindows(g, {
+    floors,
+    cols,
+    width: w * 0.96,
+    depth: d,
+    floorH: fh,
+    yBase: y0,
+    openFront: open,
+    doorSpan: spec.doors === 0 ? 0 : 1,
+  });
+  const doorW = spec.variant === "factory" ? 0.55 : 0.32;
+  const doorH = spec.variant === "factory" ? 0.48 : Math.min(0.72, fh * 0.85);
+  addEntryDoor(g, {
+    x: 0,
+    z: open ? d / 2 - 0.04 : d / 2 + 0.03,
+    yaw: open ? -0.9 : 0,
+    width: doorW,
+    height: doorH,
+    material: spec.doorMaterial || (spec.variant === "factory" ? "metal" : "wood"),
+    color: spec.doorColor || (spec.variant === "factory" ? "#455a64" : "#5d4037"),
+  });
+  if (open) addShellInterior(g, { floors, floorH: fh, width: w, depth: d, yBase: y0, school: spec.variant === "school" || spec.variant == null });
   if (spec.variant === "tower" || spec.variant === "skyscraper") {
-    g.add(M(new CylinderGeometry(0.03, 0.03, 0.45, 8), metalMaterial("#eceff1"), 0, h + 0.22, 0));
-    g.add(M(new SphereGeometry(0.05, 10, 8), glowingMaterial("#ff5252"), 0, h + 0.48, 0));
+    g.add(M(new CylinderGeometry(0.03, 0.03, 0.45, 8), metalMaterial("#eceff1"), 0, y0 + h + 0.28, 0));
+    g.add(M(new SphereGeometry(0.05, 10, 8), glowingMaterial("#ff5252"), 0, y0 + h + 0.54, 0));
+    if (spec.variant === "skyscraper") {
+      g.add(M(new BoxGeometry(w * 0.55, fh * 1.4, d * 0.55), body, 0, y0 + h + fh * 0.7, 0));
+    }
   } else if (spec.variant === "school") {
-    g.add(M(new BoxGeometry(w + 0.08, 0.06, d + 0.08), paint({}, "#ef6c00", "stone"), 0, h + 0.03, 0));
-    g.add(M(new CylinderGeometry(0.02, 0.02, 0.34, 8), metalMaterial("#eceff1"), w * 0.28, h + 0.2, 0));
-    g.add(M(new BoxGeometry(0.16, 0.1, 0.02), paint({}, "#e53935", "fabric"), w * 0.38, h + 0.28, 0));
+    g.add(M(new CylinderGeometry(0.02, 0.02, 0.34, 8), metalMaterial("#eceff1"), w * 0.28, y0 + h + 0.22, 0));
+    g.add(M(new BoxGeometry(0.18, 0.1, 0.02), paint({}, "#e53935", "fabric"), w * 0.4, y0 + h + 0.32, 0));
+    if (!open) g.add(M(new BoxGeometry(w * 0.55, 0.08, 0.04), paint({}, "#1565c0"), 0, y0 + doorH + 0.16, d / 2 + 0.08));
   } else if (spec.variant === "factory") {
-    g.add(M(new BoxGeometry(w + 0.06, 0.05, d + 0.06), paint({}, "#37474f", "metal"), 0, h + 0.03, 0));
-    g.add(M(new CylinderGeometry(0.1, 0.12, 0.5, 12), paint({}, "#78909c", "metal"), w * 0.32, h + 0.28, -d * 0.15));
-    g.add(M(new CylinderGeometry(0.08, 0.08, 0.12, 10), paint({}, "#90a4ae", "metal"), -w * 0.2, h + 0.08, d * 0.1));
-  } else {
-    g.add(M(new BoxGeometry(w + 0.08, 0.06, d + 0.08), paint({}, "#546e7a", "stone"), 0, h + 0.03, 0));
+    g.add(M(new CylinderGeometry(0.1, 0.12, 0.55, 12), paint({}, "#78909c", "metal"), w * 0.32, y0 + h + 0.3, -d * 0.15));
+    g.add(M(new CylinderGeometry(0.07, 0.09, 0.36, 10), paint({}, "#90a4ae", "metal"), -w * 0.22, y0 + h + 0.2, d * 0.05));
+    g.add(M(new BoxGeometry(0.46, 0.28, 0.04), paint({}, "#37474f", "metal"), w * 0.28, y0 + 0.28, d / 2 + 0.05));
   }
   return g;
 }
@@ -621,6 +743,7 @@ function boat(spec) {
   hull.scale.set(1.8, 0.55, 0.75);
   g.add(hull);
   g.add(M(new BoxGeometry(0.45, 0.28, 0.32), paint({}, "#ffffff"), 0.15, 0.55, 0));
+  g.add(M(new BoxGeometry(0.9, 0.06, 0.74), paint({}, "#ffffff"), 0.1, 0.42, 0));
   g.add(M(new CylinderGeometry(0.02, 0.02, 0.9, 8), paint({}, "#6d4c41", "wood"), -0.15, 0.9, 0));
   const sail = M(new BoxGeometry(0.02, 0.55, 0.38), paint({}, "#fafafa", "fabric"), -0.05, 0.95, 0);
   g.add(sail);
@@ -704,6 +827,8 @@ function bridge(spec) {
   }
   g.add(M(new BoxGeometry(0.08, 0.45, 0.08), mat, -1.05, 0.95, 0));
   g.add(M(new BoxGeometry(0.08, 0.45, 0.08), mat, 1.05, 0.95, 0));
+  g.add(M(new BoxGeometry(2.2, 0.08, 0.03), mat, 0, 0.66, 0.26));
+  g.add(M(new BoxGeometry(2.2, 0.08, 0.03), mat, 0, 0.66, -0.26));
   g.add(rod(new Vector3(-1.05, 1.15, 0), new Vector3(1.05, 1.15, 0), 0.02, paint(spec, "#e53935")));
   return g;
 }
@@ -715,6 +840,7 @@ function mountain(spec) {
   g.add(M(new ConeGeometry(1.1, 1.5, 6), rock, 0, 0.75, 0));
   g.add(M(new ConeGeometry(0.38, 0.4, 6), snow, 0, 1.4, 0));
   g.add(M(new ConeGeometry(0.55, 0.8, 5), rock, 0.7, 0.4, 0.2));
+  g.add(M(new ConeGeometry(0.42, 0.7, 5), rock, -0.55, 0.32, -0.15));
   return g;
 }
 
@@ -768,10 +894,17 @@ function fountain(spec) {
   return g;
 }
 
-function castle(spec) {
+function castle(spec, ctx) {
   const stone = paint(spec, "#9e9e9e", spec.material || "stone");
+  const open = showInside(spec, ctx);
   const g = G("Castle");
-  g.add(M(new BoxGeometry(1.5, 0.7, 1.1), stone, 0, 0.35, 0));
+  g.add(M(new BoxGeometry(1.5, 0.7, open ? 0.16 : 1.1), stone, 0, 0.35, open ? -0.47 : 0));
+  if (open) {
+    g.add(M(new BoxGeometry(0.16, 0.7, 1.1), stone, -0.67, 0.35, 0));
+    g.add(M(new BoxGeometry(0.16, 0.7, 1.1), stone, 0.67, 0.35, 0));
+    g.add(M(new BoxGeometry(1.2, 0.04, 0.9), paint({}, "#bcaaa4", "stone"), 0, 0.06, 0.05));
+  }
+  for (let i = 0; i < 5; i++) g.add(M(new BoxGeometry(0.12, 0.14, 0.12), stone, -0.56 + i * 0.28, 0.76, open ? -0.47 : 0.48));
   for (const [x, z] of [
     [-0.7, -0.5],
     [0.7, -0.5],
@@ -820,10 +953,7 @@ function bench(spec) {
 
 function solarPanelMesh(spec, x) {
   const g = new Group();
-  const panel = M(
-    new BoxGeometry(0.72, 0.04, 0.42),
-    new MeshStandardMaterial({ color: spec.color || "#1565c0", emissive: "#0d47a1", emissiveIntensity: 0.25, metalness: 0.4, roughness: 0.3 }),
-  );
+  const panel = M(new BoxGeometry(0.72, 0.04, 0.42), solarCellMaterial(spec.color || "#1565c0"));
   panel.position.set(0, 0.48, 0);
   panel.rotation.x = -0.55;
   g.add(panel);
@@ -841,10 +971,7 @@ function solar(spec) {
     g.add(M(new BoxGeometry(2.2, 0.04, 0.7), metalMaterial("#90a4ae"), 0, 0.02, 0));
     return g;
   }
-  const panel = M(
-    new BoxGeometry(1.1, 0.05, 0.6),
-    new MeshStandardMaterial({ color: spec.color || "#1565c0", emissive: "#0d47a1", emissiveIntensity: 0.25, metalness: 0.4, roughness: 0.3 }),
-  );
+  const panel = M(new BoxGeometry(1.1, 0.05, 0.6), solarCellMaterial(spec.color || "#1565c0"));
   panel.position.set(0, 0.7, 0);
   panel.rotation.x = -0.6;
   g.add(panel);
@@ -969,16 +1096,8 @@ function person(spec) {
 }
 
 function gear(spec) {
-  const mat = paint(spec, "#90a4ae", spec.material || "metal");
-  const g = G("Gear");
-  const disc = M(new CylinderGeometry(0.32, 0.32, 0.08, 24), mat, 0, 0.2, 0);
-  g.add(disc);
-  g.add(M(new CylinderGeometry(0.08, 0.08, 0.1, 16), metalMaterial("#eceff1"), 0, 0.2, 0));
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    const tooth = M(new BoxGeometry(0.1, 0.1, 0.1), mat, Math.cos(a) * 0.38, 0.2, Math.sin(a) * 0.38);
-    g.add(tooth);
-  }
+  const g = buildGearGroup(spec);
+  g.name = "Gear";
   return g;
 }
 
@@ -1213,6 +1332,8 @@ function dam(spec) {
   const g = G("Dam");
   const concrete = paint(spec, "#90a4ae", spec.material || "stone");
   g.add(M(new BoxGeometry(1.6, 0.95, 0.28), concrete, 0, 0.48, 0));
+  g.add(M(new BoxGeometry(0.16, 0.7, 0.42), concrete, -0.62, 0.4, 0.12));
+  g.add(M(new BoxGeometry(0.16, 0.7, 0.42), concrete, 0.62, 0.4, 0.12));
   g.add(M(new BoxGeometry(1.7, 0.08, 0.36), paint({}, "#78909c", "stone"), 0, 0.96, 0));
   g.add(M(new BoxGeometry(0.9, 0.5, 0.55), waterMaterial("#4fc3f7"), -0.1, 0.28, -0.38));
   const spill = M(new BoxGeometry(0.08, 0.42, 0.05), waterMaterial("#81d4fa"), 0.15, 0.7, 0.2);
@@ -1231,6 +1352,9 @@ function turbine(spec) {
   const hub = new Group();
   hub.position.set(0, 1.28, 0.1);
   hub.add(M(new SphereGeometry(0.09, 14, 12), metal, 0, 0, 0));
+  const nose = M(new ConeGeometry(0.07, 0.16, 12), metal, 0, 0, 0.12);
+  nose.rotation.x = Math.PI / 2;
+  hub.add(nose);
   const bladeMat = paint({}, "#e3f2fd", "plastic");
   for (let i = 0; i < 3; i++) {
     const holder = new Group();
@@ -1261,6 +1385,7 @@ function lighthouse(spec) {
   const g = G("Lighthouse");
   const tower = paint(spec, spec.color || "#f7f7f7", spec.material || "stone");
   g.add(M(new CylinderGeometry(0.2, 0.32, 1.3, seg(24, 14)), tower, 0, 0.68, 0));
+  g.add(M(new CylinderGeometry(0.23, 0.26, 0.1, 18), paint({}, "#e53935"), 0, 0.55, 0));
   g.add(M(new CylinderGeometry(0.23, 0.26, 0.1, 18), paint({}, "#e53935"), 0, 0.95, 0));
   g.add(M(new CylinderGeometry(0.18, 0.2, 0.16, 16), glassMaterial("#fff59d"), 0, 1.4, 0));
   g.add(M(new ConeGeometry(0.24, 0.16, 16), paint({}, "#c62828"), 0, 1.56, 0));
@@ -1294,6 +1419,106 @@ function lake(spec) {
   shore.rotation.x = Math.PI / 2;
   g.add(shore);
   return g;
+}
+
+function board(spec) {
+  const g = G("Board");
+  g.add(M(new BoxGeometry(0.08, 1.15, 0.08), paint({}, "#6d4c41", "wood"), -0.7, 0.58, 0));
+  g.add(M(new BoxGeometry(0.08, 1.15, 0.08), paint({}, "#6d4c41", "wood"), 0.7, 0.58, 0));
+  g.add(M(new BoxGeometry(1.55, 0.08, 0.08), paint({}, "#6d4c41", "wood"), 0, 1.12, 0));
+  g.add(M(new BoxGeometry(1.55, 0.08, 0.08), paint({}, "#6d4c41", "wood"), 0, 0.08, 0));
+  g.add(M(new BoxGeometry(1.4, 0.9, 0.04), paint(spec, "#f7fafc"), 0, 0.6, 0));
+  g.add(M(new BoxGeometry(0.7, 0.04, 0.01), paint({}, "#43a047"), -0.2, 0.78, 0.03));
+  g.add(M(new BoxGeometry(0.02, 0.35, 0.01), paint({}, "#1e88e5"), 0.15, 0.55, 0.03));
+  return g;
+}
+
+function screen(spec) {
+  const g = G("Screen");
+  const frame = paint({}, "#212121", "plastic");
+  g.add(M(new BoxGeometry(0.5, 0.06, 0.36), frame, 0, 0.04, 0));
+  g.add(M(new CylinderGeometry(0.03, 0.04, 0.55, 12), metalMaterial("#90a4ae"), 0, 0.32, 0));
+  g.add(M(new BoxGeometry(1.15, 0.7, 0.06), frame, 0, 0.78, 0));
+  g.add(M(new BoxGeometry(1.02, 0.56, 0.02), paint(spec, "#1565c0"), 0, 0.78, 0.035));
+  g.add(M(new BoxGeometry(0.55, 0.08, 0.015), paint({}, "#ffffff"), -0.1, 0.92, 0.05));
+  g.add(M(new BoxGeometry(0.28, 0.18, 0.015), paint({}, "#ffe082"), 0.22, 0.62, 0.05));
+  return g;
+}
+
+export function buildClassroom(spec) {
+  const g = G("Classroom");
+  const W = 3.5;
+  const D = 2.55;
+  const H = 1.42;
+  const wall = facadeMaterial({}, "#f7f1e6", "plaster");
+  const trim = paint({}, "#cfd8dc", "stone");
+  g.add(M(new BoxGeometry(W + 0.16, 0.08, D + 0.16), paint({}, "#b08968", "wood"), 0, 0.04, 0));
+  g.add(M(new BoxGeometry(W, 0.04, D * 0.92), new MeshStandardMaterial({ color: "#f7f3ea", roughness: 0.9 }), 0, 0.09, 0));
+  g.add(M(new BoxGeometry(W, H, 0.08), wall, 0, H / 2 + 0.06, -D / 2));
+  g.add(M(new BoxGeometry(0.08, H, D), wall, -W / 2, H / 2 + 0.06, 0));
+  g.add(M(new BoxGeometry(0.08, H, D), wall, W / 2, H / 2 + 0.06, 0));
+  g.add(M(new BoxGeometry(0.1, H, 0.08), wall, -W / 2 + 0.05, H / 2 + 0.06, D / 2));
+  g.add(M(new BoxGeometry(0.1, H, 0.08), wall, W / 2 - 0.05, H / 2 + 0.06, D / 2));
+  g.add(M(new BoxGeometry(W, 0.08, 0.08), trim, 0, H + 0.02, D / 2));
+  g.add(M(new BoxGeometry(1.35, 0.78, 0.05), paint({}, "#37474f"), -0.55, 0.95, -D / 2 + 0.07));
+  g.add(M(new BoxGeometry(1.2, 0.64, 0.02), paint({}, "#f7fbff"), -0.55, 0.95, -D / 2 + 0.1));
+  g.add(M(new BoxGeometry(0.55, 0.03, 0.012), paint({}, "#43a047"), -0.75, 1.08, -D / 2 + 0.12));
+  g.add(M(new BoxGeometry(0.02, 0.28, 0.012), paint({}, "#1e88e5"), -0.4, 0.9, -D / 2 + 0.12));
+  g.add(M(new BoxGeometry(0.95, 0.58, 0.06), paint({}, "#212121", "plastic"), 0.85, 0.98, -D / 2 + 0.08));
+  g.add(M(new BoxGeometry(0.82, 0.46, 0.02), paint({}, "#1565c0"), 0.85, 0.98, -D / 2 + 0.12));
+  g.add(M(new BoxGeometry(0.4, 0.06, 0.012), paint({}, "#ffffff"), 0.7, 1.08, -D / 2 + 0.14));
+  addEntryDoor(g, { x: -W / 2 + 0.02, z: 0.35, yaw: Math.PI / 2, width: 0.36, height: 0.78, material: "wood", color: "#6d4c41" });
+  for (const z of [-0.4, 0.45]) {
+    const win = windowObj({ material: "glass" });
+    win.scale.setScalar(0.62);
+    win.position.set(W / 2 - 0.16, 0.15, z);
+    win.rotation.y = -Math.PI / 2;
+    g.add(win);
+  }
+  const shelf = shelfObj({ material: "wood" });
+  shelf.position.set(W / 2 - 0.55, 0, -D / 2 + 0.4);
+  shelf.scale.setScalar(0.55);
+  g.add(shelf);
+  const teacher = table({ material: "wood", color: "#a97142" });
+  teacher.scale.set(0.72, 0.85, 0.6);
+  teacher.position.set(-0.15, 0, -0.55);
+  g.add(teacher);
+  const teacherChair = chair({ material: "wood" });
+  teacherChair.scale.setScalar(0.85);
+  teacherChair.position.set(-0.15, 0, -0.95);
+  g.add(teacherChair);
+  const globe = planet({ variant: "earth" });
+  globe.scale.setScalar(0.28);
+  globe.position.set(0.15, 0.78, -0.5);
+  g.add(globe);
+  const desks = Math.max(4, Math.min(8, spec.classroom?.desks || 6));
+  const cols = desks > 6 ? 4 : 3;
+  const rows = Math.ceil(desks / cols);
+  let n = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (n >= desks) break;
+      const x = -0.85 + c * 0.7;
+      const z = 0.15 + r * 0.62;
+      const desk = table({ material: "wood", color: "#c4a574" });
+      desk.scale.set(0.42, 0.72, 0.48);
+      desk.position.set(x, 0, z);
+      g.add(desk);
+      const seat = chair({ material: "wood", color: "#1e88e5" });
+      seat.scale.setScalar(0.72);
+      seat.position.set(x, 0, z + 0.28);
+      seat.rotation.y = Math.PI;
+      g.add(seat);
+      n += 1;
+    }
+  }
+  g.add(M(new BoxGeometry(0.55, 0.03, 0.12), new MeshStandardMaterial({ color: "#fff8e1", emissive: "#ffe082", emissiveIntensity: 0.7 }), 0, H - 0.02, 0.2));
+  tagEdit(g, { label: "Classroom", color: "#f7f1e6" });
+  return g;
+}
+
+function shelfObj(spec) {
+  return shelf(spec);
 }
 
 function abstract(spec) {
@@ -1350,6 +1575,7 @@ export function buildFiltration(spec, ctx) {
         height: clean ? 1.5 : 1.28,
         water: dirty ? "#8d6e63" : "#4fc3f7",
         dirty,
+        cutaway: !!ctx.interior,
       });
       vessel.position.x = node.x;
       const key = node.role === "dirty" ? "dirtyTank" : node.role === "clean" ? "cleanTank" : node.role === "settle" ? "settleTank" : "storageTank";
@@ -1425,19 +1651,19 @@ export function buildFiltration(spec, ctx) {
 
   const fallMid = fallTop.clone().lerp(fallBottom, 0.5);
   fallMid.x += 0.012;
-  addFlow(g, [fallTop, fallMid, fallBottom], isFast() ? 8 : 16, {
+  addFlow(g, [fallTop, fallMid, fallBottom], isFast() ? 14 : 26, {
     color: "#ff8a3d",
     colorTo: "#7ee7ff",
     tube: false,
     stream: true,
-    streamRadius: isFast() ? 0.06 : 0.09,
+    streamRadius: isFast() ? 0.07 : 0.1,
     dirty: true,
-    speed: 0.34,
-    radius: isFast() ? 0.05 : 0.072,
-    arrows: isFast() ? 3 : 6,
+    speed: 0.48,
+    radius: isFast() ? 0.058 : 0.084,
+    arrows: isFast() ? 4 : 8,
     arrowColor: "#e7f6ff",
-    arrowLength: 0.12,
-    wobble: 0.028,
+    arrowLength: 0.14,
+    wobble: 0.045,
   });
   if (!isFast()) {
     const mistA = fallTop.clone().lerp(fallBottom, 0.15);
@@ -1659,6 +1885,8 @@ const BUILDERS = {
   lighthouse,
   river,
   lake,
+  board,
+  screen,
   abstract,
 };
 

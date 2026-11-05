@@ -11,9 +11,11 @@ import {
   GridHelper,
   Group,
   HemisphereLight,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Quaternion,
   MOUSE,
   PCFSoftShadowMap,
   PerspectiveCamera,
@@ -482,7 +484,8 @@ export class Viewer {
     return { meshes, tris: Math.round(tris) };
   }
 
-  screenshot({ scale = 2, transparent = false } = {}) {
+  async capturePNG({ scale = 2, transparent = false } = {}) {
+    this.renderer.setAnimationLoop(null);
     const ratio = this.renderer.getPixelRatio();
     const prev = {
       background: this.scene.background,
@@ -492,31 +495,46 @@ export class Viewer {
       pad: this.pad.visible,
       sky: this.sky.visible,
     };
-    if (transparent) {
-      this.scene.background = null;
-      this.scene.fog = null;
-      this.grid.visible = false;
-      this.ground.visible = false;
-      this.pad.visible = false;
-      this.sky.visible = false;
-      this.renderer.setClearColor(0x000000, 0);
+    try {
+      if (transparent) {
+        this.scene.background = null;
+        this.scene.fog = null;
+        this.grid.visible = false;
+        this.ground.visible = false;
+        this.pad.visible = false;
+        this.sky.visible = false;
+        this.renderer.setClearColor(0x000000, 0);
+      }
+      const width = Math.max(this.container.clientWidth || this.renderer.domElement.width || 1, 1);
+      const height = Math.max(this.container.clientHeight || this.renderer.domElement.height || 1, 1);
+      const pixelRatio = Math.min(scale, 4096 / Math.max(width, height));
+      this.renderer.setPixelRatio(Math.max(1, pixelRatio));
+      this.resize();
+      this.renderer.render(this.scene, this.camera);
+      const blob = await new Promise((resolve, reject) => {
+        const canvas = this.renderer.domElement;
+        if (typeof canvas.toBlob !== "function") {
+          reject(new Error("png"));
+          return;
+        }
+        canvas.toBlob((value) => {
+          if (value && value.size > 64) resolve(value);
+          else reject(new Error("png"));
+        }, "image/png");
+      });
+      return blob;
+    } finally {
+      this.scene.background = prev.background;
+      this.scene.fog = prev.fog;
+      this.grid.visible = prev.grid;
+      this.ground.visible = prev.ground;
+      this.pad.visible = prev.pad;
+      this.sky.visible = prev.sky;
+      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.setPixelRatio(ratio);
+      this.resize();
+      this.renderer.setAnimationLoop(this.loop);
     }
-    const edge = Math.max(this.container.clientWidth || 1, this.container.clientHeight || 1);
-    const pixelRatio = Math.min(scale, 4096 / edge);
-    this.renderer.setPixelRatio(Math.max(1, pixelRatio));
-    this.resize();
-    this.renderer.render(this.scene, this.camera);
-    const url = this.renderer.domElement.toDataURL("image/png");
-    this.scene.background = prev.background;
-    this.scene.fog = prev.fog;
-    this.grid.visible = prev.grid;
-    this.ground.visible = prev.ground;
-    this.pad.visible = prev.pad;
-    this.sky.visible = prev.sky;
-    this.renderer.setClearColor(0x000000, 1);
-    this.renderer.setPixelRatio(ratio);
-    this.resize();
-    return url;
   }
 
   parts() {
@@ -596,14 +614,134 @@ export class Viewer {
   }
 
   async exportGLB() {
-    const exporter = new GLTFExporter();
-    const bin = await exporter.parseAsync(this.model, { binary: true });
-    return new Blob([bin], { type: "model/gltf-binary" });
+    this.model.updateMatrixWorld(true);
+    const root = this.model.clone(true);
+    bakeExportInstances(root);
+    const made = relaxExportMaterials(root);
+    root.updateMatrixWorld(true);
+    try {
+      let buffer = null;
+      try {
+        buffer = await binaryGLB(root, true);
+      } catch (error) {
+        console.error(error);
+        stripExportMaps(root);
+        buffer = await binaryGLB(root, false);
+      }
+      if (!buffer || buffer.byteLength < 20) throw new Error("empty glb");
+      const magic = String.fromCharCode(buffer[0], buffer[1], buffer[2], buffer[3]);
+      if (magic !== "glTF") throw new Error("invalid glb");
+      return new Blob([buffer], { type: "model/gltf-binary" });
+    } finally {
+      made.forEach((mat) => mat.dispose());
+    }
   }
 
   exportOBJ() {
-    const text = new OBJExporter().parse(this.model);
-    return new Blob([text], { type: "text/plain" });
+    this.model.updateMatrixWorld(true);
+    const root = this.model.clone(true);
+    bakeExportInstances(root);
+    root.updateMatrixWorld(true);
+    const text = new OBJExporter().parse(root);
+    if (!text || !/\nv\s/.test(`\n${text}`)) throw new Error("empty obj");
+    return new Blob([text], { type: "model/obj" });
+  }
+}
+
+function toUint8(bin) {
+  if (bin instanceof Uint8Array) return bin;
+  if (bin instanceof ArrayBuffer) return new Uint8Array(bin);
+  if (ArrayBuffer.isView(bin)) return new Uint8Array(bin.buffer, bin.byteOffset, bin.byteLength);
+  return null;
+}
+
+async function binaryGLB(root, withMaps) {
+  const bin = await new GLTFExporter().parseAsync(root, {
+    binary: true,
+    onlyVisible: true,
+    truncateDrawRange: true,
+    embedImages: withMaps,
+  });
+  return toUint8(bin);
+}
+
+function stripExportMaps(root) {
+  root.traverse((node) => {
+    if (!node.isMesh) return;
+    [].concat(node.material || []).forEach((mat) => {
+      if (!mat) return;
+      mat.map = null;
+      mat.bumpMap = null;
+      mat.normalMap = null;
+      mat.emissiveMap = null;
+      mat.alphaMap = null;
+      mat.roughnessMap = null;
+      mat.metalnessMap = null;
+    });
+  });
+}
+
+function relaxExportMaterials(root) {
+  const made = [];
+  root.traverse((node) => {
+    if (!node.isMesh || !node.material) return;
+    const list = [].concat(node.material).map((mat) => {
+      if (!mat) return mat;
+      const physical = mat.isMeshPhysicalMaterial || (mat.transmission && mat.transmission > 0);
+      const next = physical
+        ? new MeshStandardMaterial({
+          color: mat.color,
+          map: mat.map || null,
+          roughness: mat.roughness ?? 0.4,
+          metalness: mat.metalness ?? 0,
+          transparent: true,
+          opacity: 0.45,
+          emissive: mat.emissive,
+          emissiveIntensity: mat.emissiveIntensity || 0,
+          side: mat.side,
+          depthWrite: false,
+        })
+        : mat.clone();
+      next.envMap = null;
+      next.name = mat.name || "material";
+      made.push(next);
+      return next;
+    });
+    node.material = list.length === 1 ? list[0] : list;
+  });
+  return made;
+}
+
+function bakeExportInstances(root) {
+  const found = [];
+  root.traverse((node) => {
+    if (node.isInstancedMesh) found.push(node);
+  });
+  const matrix = new Matrix4();
+  const position = new Vector3();
+  const quaternion = new Quaternion();
+  const scale = new Vector3();
+  for (const inst of found) {
+    const parent = inst.parent;
+    if (!parent) continue;
+    const holder = new Group();
+    holder.name = inst.name || "Instances";
+    holder.position.copy(inst.position);
+    holder.quaternion.copy(inst.quaternion);
+    holder.scale.copy(inst.scale);
+    const total = Math.min(inst.count || 0, 480);
+    for (let i = 0; i < total; i++) {
+      inst.getMatrixAt(i, matrix);
+      matrix.decompose(position, quaternion, scale);
+      const mesh = new Mesh(inst.geometry, inst.material);
+      mesh.name = `${inst.name || "part"}-${i}`;
+      mesh.position.copy(position);
+      mesh.quaternion.copy(quaternion);
+      mesh.scale.copy(scale);
+      holder.add(mesh);
+    }
+    parent.add(holder);
+    parent.remove(inst);
   }
 }
 

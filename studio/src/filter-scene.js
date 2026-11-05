@@ -449,7 +449,7 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
   const tall = radius >= 0.4;
   const weights = list.map((id) => (stack4 ? 1 : layerWeight(id)));
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
-  const gap = stack4 ? 0.034 : tall ? 0.09 : 0.045;
+  const gap = stack4 ? 0.07 : tall ? 0.1 : 0.05;
   const mediaH = stack4 ? 1.92 : Math.min(tall ? 2.2 : 1.2, (tall ? 0.33 : 0.26) * list.length + (tall ? 0.46 : 0.2));
   const usable = Math.max(0.2, mediaH - gap * Math.max(0, list.length - 1));
   const foot = tall ? 0.28 : 0.16;
@@ -470,6 +470,10 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
   const poolH = tall ? 0.12 : 0.07;
   const pool = pieCylinder(radius * 0.8, radius * 0.8, poolH, cleanMat, cut, 32);
   pool.position.y = y0 + foot * 0.55;
+  pool.userData.baseY = pool.position.y;
+  pool.userData.tick = (t) => {
+    pool.position.y = pool.userData.baseY + Math.sin(t * 3.2) * 0.01;
+  };
   g.add(pool);
   addCutFaces(g, radius * 0.8, poolH, pool.position.y, cut, cleanMat);
 
@@ -504,8 +508,17 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
     } else if (["sponge", "cloth", "cotton", "sand", "coarseSand", "charcoal"].includes(id)) wasteY = cursor;
     if (index < list.length - 1) {
       cursor -= gap;
-      if (stack4) addSeam(g, cursor + gap / 2, radius, cut);
-      else addSeparator(g, cursor + gap / 2, radius, cut, id === "sponge" || id === "cloth" || id === "cotton" || id === "sand");
+      const seamY = cursor + gap / 2;
+      if (stack4) addSeam(g, seamY, radius, cut);
+      else addSeparator(g, seamY, radius, cut, id === "sponge" || id === "cloth" || id === "cotton" || id === "sand");
+      const tone = LAYER_COLORS[id] || "#90a4ae";
+      const collar = new Mesh(
+        new CylinderGeometry(radius * 1.025, radius * 1.025, stack4 ? 0.03 : 0.02, tall ? 40 : 24, 1, true, cut.start, cut.length),
+        new MeshStandardMaterial({ color: tone, emissive: tone, emissiveIntensity: 0.28, roughness: 0.42, metalness: 0.08 }),
+      );
+      collar.position.y = seamY;
+      collar.castShadow = false;
+      g.add(collar);
     }
   });
 
@@ -514,6 +527,10 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
   const dirtyMat = waterMaterial("#8d6e63", true);
   const cap = pieCylinder(radius * 0.78, radius * 0.78, capH, dirtyMat, cut, 32);
   cap.position.y = mediaTop + 0.025 + capH / 2;
+  cap.userData.baseY = cap.position.y;
+  cap.userData.tick = (t) => {
+    cap.position.y = cap.userData.baseY + Math.sin(t * 2.6) * 0.012;
+  };
   g.add(cap);
   addCutFaces(g, radius * 0.78, capH, cap.position.y, cut, dirtyMat);
   if (!stack4) {

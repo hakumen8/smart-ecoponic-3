@@ -172,6 +172,36 @@ test("educational and environmental nouns", () => {
   assert.equal(school.objects[0].floors, 3);
 });
 
+test("classroom scene in both languages", () => {
+  const en = parsePrompt("a classroom with desks, chairs, a whiteboard, a screen, a door and windows");
+  assert.equal(en.mode, "classroom");
+  assert.ok(en.classroom.desks >= 2);
+  const ar = parsePrompt("صف دراسي");
+  assert.equal(ar.mode, "classroom");
+  assert.equal(ar.objects.length, 0);
+});
+
+test("openings attach to one house and stay loose without a host", () => {
+  const house = parsePrompt("a house with a wooden door and two glass windows");
+  assert.equal(house.objects.length, 1);
+  assert.equal(house.objects[0].type, "house");
+  assert.equal(house.objects[0].doors, 1);
+  assert.equal(house.objects[0].doorMaterial, "wood");
+  assert.equal(house.objects[0].windows, 2);
+  assert.equal(house.objects[0].windowMaterial, "glass");
+  const loose = parsePrompt("a stone arch, a wooden door and two glass windows");
+  assert.equal(loose.objects.find((o) => o.type === "door").material, "wood");
+  assert.equal(loose.objects.find((o) => o.type === "window").count, 2);
+});
+
+test("cutaway marks a cylinder and the scene", () => {
+  const s = parsePrompt("a cutaway metal cylinder");
+  assert.equal(s.objects[0].type, "cylinder");
+  assert.equal(s.objects[0].material, "metal");
+  assert.equal(s.objects[0].cutaway, true);
+  assert.equal(s.interior, true);
+});
+
 test("improve description and suggestions", () => {
   assert.match(improvePrompt("classroom"), /window/i);
   assert.match(improvePrompt("school"), /school/i);

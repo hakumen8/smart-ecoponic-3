@@ -60,6 +60,23 @@ add(
 );
 add(
   [
+    "classroom",
+    "class room",
+    "schoolroom",
+    "school room",
+    "lecture room",
+    "lecture hall",
+    "صف دراسي",
+    "غرفه صف",
+    "قاعه دراسيه",
+    "فصل دراسي",
+    "حجرة دراسيه",
+    "حجره دراسيه",
+  ],
+  system("classroom"),
+);
+add(
+  [
     "aquaponics system",
     "aquaponic system",
     "aquaponics",
@@ -158,6 +175,10 @@ const OBJECTS = [
   [["cabinet", "wardrobe", "closet", "خزانه", "دولاب"], "cabinet"],
   [["chessboard", "chess board", "checkerboard", "رقعه شطرنج", "شطرنج"], "chessboard"],
   [["school building", "school", "مبنى مدرسي", "مدرسه"], "building", { variant: "school" }],
+  [["warehouse", "hangar", "مستودع"], "building", { variant: "factory" }],
+  [["truck", "lorry", "pickup", "شاحنه"], "car", { variant: "truck" }],
+  [["whiteboard", "blackboard", "chalkboard", "board", "سبوره", "لوح"], "board"],
+  [["display screen", "monitor", "projector screen", "screen", "شاشه عرض", "شاشه"], "screen"],
   [["factory", "مصنع", "معمل"], "building", { variant: "factory" }],
   [["beaker", "دورق", "كأس مختبر"], "beaker"],
   [["atom", "ذره"], "atom"],
@@ -178,6 +199,7 @@ add([{ t: "مكعبات", plural: true }], object("cube"));
 add([{ t: "صناديق", plural: true }], object("cube", { variant: "crate" }));
 add([{ t: "منازل", plural: true }, { t: "بيوت", plural: true }], object("house"));
 add([{ t: "كراسي", plural: true }], object("chair"));
+add([{ t: "طاولات", plural: true }], object("table"));
 add([{ t: "نباتات", plural: true }], object("plant"));
 add([{ t: "اسماك", plural: true }], object("fish"));
 
@@ -544,7 +566,30 @@ function baseSpec(lang, text) {
     objects: [],
     filtration: null,
     aquaponics: null,
+    classroom: null,
+    interior: false,
   };
+}
+
+function absorbOpenings(list) {
+  const hosts = list.filter((o) => o.type === "building" || o.type === "house" || o.type === "castle");
+  if (hosts.length !== 1) return list;
+  const host = hosts[0];
+  const doors = list.filter((o) => o.type === "door");
+  const windows = list.filter((o) => o.type === "window");
+  if (!doors.length && !windows.length) return list;
+  if (doors.length) {
+    host.doors = Math.min(4, doors.reduce((n, o) => n + (o.count || 1), 0));
+    host.doorMaterial = doors[0].material || host.doorMaterial || null;
+    host.doorColor = doors[0].color || null;
+    if (doors[0].variant) host.doorVariant = doors[0].variant;
+  }
+  if (windows.length) {
+    host.windows = Math.min(24, windows.reduce((n, o) => n + (o.count || 1), 0));
+    host.windowMaterial = windows[0].material || "glass";
+    host.windowColor = windows[0].color || null;
+  }
+  return list.filter((o) => o.type !== "door" && o.type !== "window");
 }
 
 function assemble(items, lang, text) {
@@ -553,13 +598,15 @@ function assemble(items, lang, text) {
   const hasAqua = systems.some((s) => s.id === "aquaponics");
   const hasFilt = systems.some((s) => s.id === "filtration");
   const objectItems = items.filter((i) => i.kind === "object" && i.id !== "filtration" && i.id !== "aquaponics");
-  const objs = objectItems.map((it) => blankObject(it, text));
+  let objs = objectItems.map((it) => blankObject(it, text));
   const layers = collectLayers(items);
   const hasFilter = objs.some((o) => o.type === "filter");
   const hasTank = objs.some((o) => o.type === "tank");
+  const hasClass = systems.some((s) => s.id === "classroom");
 
   let mode = "scene";
-  if (hasAqua && !hasFilt) mode = "aquaponics";
+  if (hasClass && !hasAqua && !hasFilt) mode = "classroom";
+  else if (hasAqua && !hasFilt) mode = "aquaponics";
   else if (hasFilt && !hasAqua) mode = "filtration";
   else if (hasAqua && hasFilt) mode = items.find((i) => i.kind === "system").id === "aquaponics" ? "aquaponics" : "filtration";
   else if ((hasFilter && (hasTank || layers.length >= 2)) || layers.length >= 3) mode = "filtration";
@@ -600,7 +647,27 @@ function assemble(items, lang, text) {
     } else if (mod.kind === "floors") {
       const o = bind(objs, mod, lang, (x) => ["building", "castle", "house"].includes(x.type), 8);
       if (o) o.floors = clamp(mod.value, 1, 60);
+    } else if (mod.kind === "modifier" && mod.id === "cutaway") {
+      const o = bind(objs, mod, lang, (x) => ["building", "house", "castle", "cylinder", "tank", "dome"].includes(x.type), 8);
+      if (o) o.cutaway = true;
     }
+  }
+
+  if (/\bcutaway\b|cross section|مقطع|مقطوع/.test(normalize(text))) spec.interior = true;
+
+  if (mode === "classroom") {
+    const tables = objs.filter((o) => o.type === "table");
+    const chairs = objs.filter((o) => o.type === "chair");
+    const deskSum = tables.reduce((n, o) => n + o.count, 0);
+    const chairSum = chairs.reduce((n, o) => n + o.count, 0);
+    spec.classroom = {
+      desks: clamp(tables.some((o) => o.explicitCount) ? deskSum : 6, 2, 8),
+      chairs: clamp(chairs.some((o) => o.explicitCount) ? chairSum : deskSum || 6, 2, 12),
+    };
+    const drop = new Set(["table", "chair", "door", "window", "building", "board", "screen", "shelf", "house"]);
+    objs = objs.filter((o) => !drop.has(o.type));
+  } else {
+    objs = absorbOpenings(objs);
   }
 
   for (const rel of items.filter((i) => i.kind === "relation")) {
@@ -633,6 +700,12 @@ function assemble(items, lang, text) {
         o.variant === "skyscraper" ? 22 : o.variant === "tower" ? 12 : o.variant === "school" ? 3 : o.variant === "factory" ? 2 : 8;
     }
     if (o.type === "castle" && !o.floors) o.floors = 3;
+  }
+
+  if (mode === "classroom") {
+    spec.mode = "classroom";
+    spec.objects = objs;
+    return spec;
   }
 
   if (mode === "filtration") {

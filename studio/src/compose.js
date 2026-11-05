@@ -1,5 +1,5 @@
 import { Box3, Group, Vector3 } from "three";
-import { buildAquaponics, buildFiltration, buildObject, resetEditIds } from "./builders.js";
+import { buildAquaponics, buildClassroom, buildFiltration, buildObject, resetEditIds } from "./builders.js";
 
 function metricsOf(group) {
   group.updateMatrixWorld(true);
@@ -108,13 +108,15 @@ function center(root) {
   return root;
 }
 
-export function buildSpec(spec, ctx) {
+export function buildSpec(spec, ctx = {}) {
   resetEditIds();
+  const view = { ...ctx, interior: !!(ctx.interior || spec.interior) };
   const root = new Group();
   root.name = "MujassamModel";
-  if (spec.mode === "filtration") root.add(buildFiltration(spec, ctx));
-  if (spec.mode === "aquaponics") root.add(buildAquaponics(spec, ctx));
-  const extras = layoutObjects(spec.objects || [], ctx);
+  if (spec.mode === "filtration") root.add(buildFiltration(spec, view));
+  if (spec.mode === "aquaponics") root.add(buildAquaponics(spec, view));
+  if (spec.mode === "classroom") root.add(buildClassroom(spec, view));
+  const extras = layoutObjects(spec.objects || [], view);
   if (extras) {
     root.updateMatrixWorld(true);
     const have = new Box3().setFromObject(root);
