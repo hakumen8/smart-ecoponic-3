@@ -447,9 +447,25 @@ export function paint(spec = {}, fallback = "#90a4c8", kind) {
   if (spec.glow || materialKind === "glow") return glowingMaterial(color);
   if (materialKind === "glass") return glassMaterial(color);
   if (materialKind === "water") return waterMaterial(color, false);
-  if (materialKind === "metal") return metalMaterial(color);
-  if (materialKind === "gold") return metalMaterial(spec.color || "#d4af37", 1, 0.22);
-  if (materialKind === "copper") return metalMaterial(spec.color || "#b87333", 0.92, 0.3);
+  if (materialKind === "metal" || materialKind === "gold" || materialKind === "copper") {
+    let hex = color;
+    let metal = materialKind === "gold" ? 1 : materialKind === "copper" ? 0.92 : 0.86;
+    let rough = materialKind === "gold" ? 0.22 : materialKind === "copper" ? 0.3 : 0.28;
+    if (materialKind === "gold") hex = spec.color || "#d4af37";
+    if (materialKind === "copper") hex = spec.color || "#b87333";
+    if (spec.finish === "polished") {
+      rough = 0.1;
+      metal = 1;
+    } else if (spec.finish === "brushed") {
+      rough = 0.48;
+      metal = Math.min(metal, 0.74);
+    } else if (spec.finish === "rusty") {
+      rough = 0.94;
+      metal = 0.22;
+      hex = shade(hex, -1);
+    }
+    return metalMaterial(hex, metal, rough);
+  }
   if (materialKind === "wood") {
     return new MeshStandardMaterial({
       color: "#ffffff",

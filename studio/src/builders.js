@@ -30,6 +30,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { FILTER_STACK } from "./i18n.js";
 import { buildFilterColumn, addFlow, buildWasteBin } from "./filter-scene.js";
 import { addCutCaps, addEntryDoor, addFacadeWindows, addShellInterior, buildGearGroup, cylinderBody, showInside } from "./details.js";
+import { addNozzle, boltRing, connectPoints, enrichModel } from "./kit.js";
 import { facadeMaterial, glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, solarCellMaterial, waterMaterial, windowGlass } from "./materials.js";
 import { rng } from "./parser.js";
 import { isFast, seg } from "./quality.js";
@@ -205,31 +206,73 @@ export function makeLabel(text, opts) {
 
 function cube(spec) {
   if (spec.variant === "dice") {
-    const body = M(new RoundedBoxGeometry(0.9, 0.9, 0.9, 3, 0.08), paint(spec, "#f5f5f5"));
-    body.position.y = 0.45;
+    const body = M(new RoundedBoxGeometry(0.9, 0.9, 0.9, 4, 0.1), paint(spec, "#f5f5f5"));
+    body.position.y = 0.48;
     const pip = paint({}, "#222");
-    const dots = [
-      [0, 0.45, 0.46],
-      [-0.18, 0.62, 0.46],
-      [0.18, 0.28, 0.46],
-    ].map(([x, y, z]) => M(new SphereGeometry(0.06, 12, 10), pip, x, y, z));
-    return G("Dice", body, dots);
+    const faces = [
+      [[0, 0.48, 0.47]],
+      [[-0.16, 0.64, 0.47], [0.16, 0.32, 0.47]],
+      [[-0.16, 0.64, -0.47], [0, 0.48, -0.47], [0.16, 0.32, -0.47]],
+      [[0.47, 0.64, -0.16], [0.47, 0.64, 0.16], [0.47, 0.32, -0.16], [0.47, 0.32, 0.16]],
+    ];
+    const dots = faces.flat().map(([x, y, z]) => M(new SphereGeometry(0.045, 10, 8), pip, x, y, z));
+    const g = G("Dice", body, dots);
+    boltRing(g, 0.06, 0.28, 4, metalMaterial("#b0bec5", 0.6, 0.35), 0.7);
+    return g;
   }
-  const mat = paint(spec, spec.variant === "crate" ? "#a97142" : "#5b8def", spec.variant === "crate" ? "wood" : undefined);
-  const body = M(new RoundedBoxGeometry(1, 1, 1, 3, 0.06), mat, 0, 0.5, 0);
-  if (spec.variant !== "crate") return G("Cube", body);
-  const edge = paint({}, "#6d4c41", "wood");
-  const slats = [
-    M(new BoxGeometry(1.04, 0.08, 0.08), edge, 0, 0.2, 0.5),
-    M(new BoxGeometry(1.04, 0.08, 0.08), edge, 0, 0.8, 0.5),
-    M(new BoxGeometry(1.04, 0.08, 0.08), edge, 0, 0.2, -0.5),
-    M(new BoxGeometry(1.04, 0.08, 0.08), edge, 0, 0.8, -0.5),
+  const crate = spec.variant === "crate";
+  const mat = paint(spec, crate ? "#a97142" : "#5b8def", crate ? "wood" : undefined);
+  const g = G(crate ? "Crate" : "Cube");
+  g.add(M(new RoundedBoxGeometry(0.92, 0.92, 0.92, 4, 0.08), mat, 0, 0.52, 0));
+  const edge = crate ? paint({}, "#4e342e", "wood") : metalMaterial("#263238", 0.72, 0.34);
+  const panel = crate ? paint({}, "#c4966a", "wood") : paint({ ...spec, lightness: 1 }, spec.color || "#90caf9");
+  const faces = [
+    [0, 0.52, 0.475, 0.58, 0.58, 0.03],
+    [0, 0.52, -0.475, 0.58, 0.58, 0.03],
+    [0.475, 0.52, 0, 0.03, 0.58, 0.58],
+    [-0.475, 0.52, 0, 0.03, 0.58, 0.58],
+    [0, 0.99, 0, 0.58, 0.03, 0.58],
   ];
-  return G("Crate", body, slats);
+  for (const [x, y, z, w, h, d] of faces) g.add(M(new BoxGeometry(w, h, d), panel, x, y, z));
+  for (const x of [-0.42, 0.42]) {
+    for (const z of [-0.42, 0.42]) {
+      g.add(M(new BoxGeometry(0.1, 0.96, 0.1), edge, x, 0.52, z));
+    }
+  }
+  if (crate) {
+    for (const y of [0.22, 0.52, 0.82]) {
+      g.add(M(new BoxGeometry(1.02, 0.06, 0.06), edge, 0, y, 0.48));
+      g.add(M(new BoxGeometry(1.02, 0.06, 0.06), edge, 0, y, -0.48));
+    }
+    for (const x of [-0.3, 0.3]) g.add(M(new SphereGeometry(0.025, 8, 6), metalMaterial("#b0bec5", 0.8, 0.3), x, 0.52, 0.5));
+  } else {
+    g.add(M(new BoxGeometry(0.22, 0.08, 0.02), metalMaterial("#eceff1", 0.7, 0.3), 0, 0.34, 0.5));
+  }
+  g.add(M(new CylinderGeometry(0.62, 0.66, 0.06, 16), paint({}, "#455a64", "metal"), 0, 0.03, 0));
+  return g;
 }
 
 function sphere(spec) {
-  return G("Sphere", M(new SphereGeometry(0.55, seg(48, 22), seg(32, 16)), paint(spec, "#ff6b6b"), 0, 0.55, 0));
+  const mat = paint(spec, "#ff6b6b");
+  const ring = metalMaterial("#eceff1", 0.86, 0.26);
+  const g = G("Sphere");
+  g.add(M(new SphereGeometry(0.46, seg(48, 20), seg(32, 14)), mat, 0, 0.78, 0));
+  const eq = M(new TorusGeometry(0.49, 0.02, 8, seg(40, 18)), ring, 0, 0.78, 0);
+  eq.rotation.x = Math.PI / 2;
+  g.add(eq);
+  const mer = M(new TorusGeometry(0.49, 0.014, 8, seg(36, 16)), ring, 0, 0.78, 0);
+  g.add(mer);
+  const mer2 = mer.clone();
+  mer2.rotation.y = Math.PI / 2;
+  g.add(mer2);
+  g.add(M(new CylinderGeometry(0.08, 0.1, 0.05, 12), ring, 0, 1.25, 0));
+  g.add(M(new CylinderGeometry(0.28, 0.34, 0.07, 20), metalMaterial("#546e7a", 0.65, 0.4), 0, 0.035, 0));
+  g.add(M(new CylinderGeometry(0.07, 0.09, 0.22, 12), ring, 0, 0.16, 0));
+  const cup = M(new TorusGeometry(0.16, 0.02, 8, 20), ring, 0, 0.28, 0);
+  cup.rotation.x = Math.PI / 2;
+  g.add(cup);
+  boltRing(g, 0.07, 0.24, 8);
+  return g;
 }
 
 function cylinder(spec, ctx) {
@@ -238,56 +281,102 @@ function cylinder(spec, ctx) {
     const wood = paint(spec, "#8d5a32", "wood");
     const band = metalMaterial("#9aa4ad", 0.8, 0.35);
     const body = cylinderBody(0.42, 0.42, 1.05, wood, open, 32);
-    body.position.y = 0.55;
-    const g = G(
-      "Barrel",
-      body,
-      M(new TorusGeometry(0.44, 0.035, 8, 30), band, 0, 0.85, 0),
-      M(new TorusGeometry(0.44, 0.035, 8, 30), band, 0, 0.28, 0),
-      M(new CylinderGeometry(0.06, 0.06, 0.04, 12), band, 0.28, 0.95, 0),
-    );
-    if (open) addCutCaps(g, 0.42, 1.05, 0.55, wood);
+    body.position.y = 0.58;
+    const g = G("Barrel", body);
+    for (const y of [0.28, 0.58, 0.9]) {
+      const hoop = M(new TorusGeometry(0.44, 0.03, 8, 28), band, 0, y, 0);
+      hoop.rotation.x = Math.PI / 2;
+      g.add(hoop);
+    }
+    g.add(M(new CylinderGeometry(0.1, 0.1, 0.04, 12), band, 0, 1.12, 0));
+    g.add(M(new BoxGeometry(0.16, 0.03, 0.03), band, 0, 1.16, 0));
+    boltRing(g, 1.1, 0.28, 6);
+    if (open) addCutCaps(g, 0.42, 1.05, 0.58, wood);
     return g;
   }
   const mat = paint(spec, "#38bdf8");
-  const body = cylinderBody(0.42, 0.42, 1.15, mat, open, seg(40, 18));
-  body.position.y = 0.58;
-  const g = G(
-    "Cylinder",
-    body,
-    M(new TorusGeometry(0.42, 0.02, 8, 28), metalMaterial("#cfd8dc", 0.7, 0.3), 0, 1.14, 0),
-    M(new TorusGeometry(0.42, 0.02, 8, 28), metalMaterial("#cfd8dc", 0.7, 0.3), 0, 0.04, 0),
-  );
-  g.children[1].rotation.x = Math.PI / 2;
-  g.children[2].rotation.x = Math.PI / 2;
-  if (open) addCutCaps(g, 0.42, 1.15, 0.58, mat);
+  const shell = metalMaterial("#cfd8dc", 0.78, 0.28);
+  const body = cylinderBody(0.4, 0.4, 1.05, mat, open, seg(48, 18));
+  body.position.y = 0.62;
+  const g = G("Cylinder", body);
+  for (const y of [0.22, 0.62, 1.02]) {
+    const hoop = M(new TorusGeometry(0.42, 0.022, 8, seg(32, 16)), shell, 0, y, 0);
+    hoop.rotation.x = Math.PI / 2;
+    g.add(hoop);
+  }
+  g.add(M(new CylinderGeometry(0.52, 0.56, 0.08, 24), metalMaterial("#455a64", 0.7, 0.35), 0, 0.04, 0));
+  g.add(M(new CylinderGeometry(0.48, 0.48, 0.06, 24), shell, 0, 1.18, 0));
+  boltRing(g, 1.2, 0.36, 8);
+  boltRing(g, 0.08, 0.4, 8);
+  const gauge = M(new CylinderGeometry(0.07, 0.07, 0.03, 12), metalMaterial("#263238", 0.6, 0.3), 0, 0.72, 0.4);
+  gauge.rotation.x = Math.PI / 2;
+  g.add(gauge);
+  g.add(M(new CylinderGeometry(0.045, 0.045, 0.01, 10), paint({}, "#e53935"), 0, 0.72, 0.42));
+  addNozzle(g, new Vector3(0.4, 0.85, 0), new Vector3(1, 0, 0), 0.045, shell);
+  if (open) addCutCaps(g, 0.4, 1.05, 0.62, mat);
   return g;
 }
 
 function cone(spec) {
-  return G("Cone", M(new ConeGeometry(0.55, 1.15, seg(40, 16)), paint(spec, "#fb923c"), 0, 0.58, 0));
+  const mat = paint(spec, "#fb923c");
+  const g = G("Cone");
+  g.add(M(new ConeGeometry(0.5, 0.7, seg(40, 16)), mat, 0, 0.78, 0));
+  g.add(M(new ConeGeometry(0.32, 0.42, seg(32, 14)), mat, 0, 1.22, 0));
+  g.add(M(new SphereGeometry(0.07, 12, 10), metalMaterial("#eceff1", 0.8, 0.25), 0, 1.46, 0));
+  for (const y of [0.5, 0.95]) {
+    const ring = M(new TorusGeometry(y < 0.7 ? 0.36 : 0.2, 0.018, 8, 24), metalMaterial("#cfd8dc", 0.75, 0.3), 0, y, 0);
+    ring.rotation.x = Math.PI / 2;
+    g.add(ring);
+  }
+  g.add(M(new CylinderGeometry(0.58, 0.64, 0.08, 24), paint({}, "#546e7a", "metal"), 0, 0.04, 0));
+  boltRing(g, 0.08, 0.46, 8);
+  return g;
 }
 
 function torus(spec) {
-  const mesh = M(new TorusGeometry(0.48, 0.16, seg(24, 10), seg(64, 28)), paint(spec, "#a78bfa"));
+  const mat = paint(spec, "#a78bfa");
+  const mesh = M(new TorusGeometry(0.42, 0.14, seg(24, 10), seg(64, 28)), mat);
   spin(mesh, Math.PI / 2, 0, 0);
-  mesh.position.y = 0.2;
-  return G("Torus", mesh);
+  mesh.position.y = 0.46;
+  const g = G("Torus", mesh);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    g.add(M(new CylinderGeometry(0.03, 0.03, 0.28, 8), metalMaterial("#eceff1", 0.8, 0.28), Math.cos(a) * 0.2, 0.46, Math.sin(a) * 0.2));
+  }
+  g.add(M(new SphereGeometry(0.08, 12, 10), metalMaterial(spec.color || "#f5f5f5", 0.7, 0.25), 0, 0.46, 0));
+  g.add(M(new CylinderGeometry(0.22, 0.28, 0.08, 16), metalMaterial("#455a64", 0.65, 0.4), 0, 0.04, 0));
+  g.add(M(new CylinderGeometry(0.05, 0.06, 0.24, 10), metalMaterial("#90a4ae", 0.75, 0.3), 0, 0.16, 0));
+  return g;
 }
 
 function pyramid(spec) {
-  const mesh = M(new ConeGeometry(0.72, 1.05, 4), paint(spec, "#e0b354", spec.material || "stone"));
-  mesh.rotation.y = Math.PI / 4;
-  mesh.position.y = 0.62;
-  return G(
-    "Pyramid",
-    mesh,
-    M(new BoxGeometry(1.15, 0.1, 1.15), paint({}, "#c4b49a", "stone"), 0, 0.05, 0),
-  );
+  const mat = paint(spec, "#e0b354", spec.material || "stone");
+  const g = G("Pyramid");
+  const steps = 6;
+  const course = 0.18;
+  for (let i = 0; i < steps; i++) {
+    const size = 1.35 * (1 - i * 0.13);
+    g.add(M(new BoxGeometry(size, course * 0.82, size), mat, 0, 0.08 + i * course, 0));
+    g.add(M(new BoxGeometry(size * 1.03, 0.025, size * 1.03), paint({}, "#c4b49a", "stone"), 0, 0.08 + i * course + course * 0.42, 0));
+  }
+  g.add(M(new BoxGeometry(0.16, 0.14, 0.16), metalMaterial("#d4af37", 0.95, 0.22), 0, 0.08 + steps * course + 0.06, 0));
+  g.add(M(new BoxGeometry(1.5, 0.08, 1.5), paint({}, "#bcaaa4", "stone"), 0, 0.04, 0));
+  g.add(M(new BoxGeometry(0.22, 0.28, 0.08), paint({}, "#5d4037", "wood"), 0, 0.22, 0.7));
+  for (let i = 0; i < 4; i++) g.add(M(new BoxGeometry(0.28, 0.06, 0.16), paint({}, "#efebe9", "stone"), 0, 0.06 + i * 0.07, 0.82 + i * 0.02));
+  return g;
 }
 
 function capsule(spec) {
-  return G("Capsule", M(new CapsuleGeometry(0.32, 0.7, 8, 24), paint(spec, "#34d399"), 0, 0.67, 0));
+  const mat = paint(spec, "#34d399");
+  const g = G("Capsule", M(new CapsuleGeometry(0.28, 0.62, 8, seg(24, 12)), mat, 0, 0.7, 0));
+  for (const y of [0.48, 0.92]) {
+    const band = M(new TorusGeometry(0.29, 0.018, 8, 20), metalMaterial("#eceff1", 0.8, 0.28), 0, y, 0);
+    band.rotation.x = Math.PI / 2;
+    g.add(band);
+  }
+  g.add(M(new BoxGeometry(0.2, 0.08, 0.02), paint({}, "#ffffff"), 0, 0.7, 0.28));
+  g.add(M(new CylinderGeometry(0.2, 0.24, 0.06, 16), metalMaterial("#546e7a", 0.6, 0.4), 0, 0.03, 0));
+  return g;
 }
 
 function star(spec) {
@@ -357,6 +446,28 @@ export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", d
   const rim = M(new TorusGeometry(radius, 0.028, 10, 40), metalMaterial("#b0bec5", 0.75, 0.3), 0, height + 0.08, 0);
   spin(rim, Math.PI / 2, 0, 0);
   g.add(base, wall, liquid, rim);
+  const shell = metalMaterial("#b0bec5", 0.8, 0.28);
+  const legY = 0.1;
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.4;
+    g.add(M(new CylinderGeometry(0.035, 0.045, 0.16, 8), shell, Math.cos(a) * radius * 0.72, legY, Math.sin(a) * radius * 0.72));
+  }
+  g.add(M(new CylinderGeometry(radius * 0.55, radius * 0.55, 0.05, 20), shell, 0, height + 0.12, 0));
+  g.add(M(new TorusGeometry(radius * 0.28, 0.02, 6, 16), shell, 0, height + 0.16, 0));
+  g.children[g.children.length - 1].rotation.x = Math.PI / 2;
+  g.add(M(new BoxGeometry(radius * 0.5, 0.03, 0.03), shell, 0, height + 0.2, 0));
+  boltRing(g, height + 0.1, radius * 0.82, 8, null, Math.max(0.7, radius));
+  const sight = M(new BoxGeometry(0.04, height * 0.55, 0.08), glassMaterial("#e1f5fe"), 0, height * 0.48, radius * 0.92);
+  g.add(sight);
+  for (const y of [height * 0.32, height * 0.62]) {
+    g.add(M(new BoxGeometry(0.05, 0.012, 0.09), metalMaterial("#eceff1", 0.7, 0.3), 0, y, radius * 0.98));
+  }
+  const gauge = M(new CylinderGeometry(0.06, 0.06, 0.025, 12), metalMaterial("#263238", 0.6, 0.3), radius * 0.72, height * 0.78, 0);
+  gauge.rotation.z = Math.PI / 2;
+  g.add(gauge);
+  g.add(M(new CylinderGeometry(0.035, 0.035, 0.01, 10), paint({}, dirty ? "#e53935" : "#43a047"), radius * 0.76, height * 0.78, 0));
+  const portRight = addNozzle(g, new Vector3(radius, height * 0.7, 0), new Vector3(1, 0, 0), Math.max(0.045, radius * 0.1), shell);
+  const portLeft = addNozzle(g, new Vector3(-radius, height * 0.4, 0), new Vector3(-1, 0, 0), Math.max(0.045, radius * 0.1), shell);
   if (dirty) {
     const speck = paint({}, "#5d4037", "rubber");
     for (let i = 0; i < 8; i++) {
@@ -364,45 +475,61 @@ export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", d
       g.add(M(new SphereGeometry(0.03, 8, 8), speck, Math.cos(a) * radius * 0.45, 0.25 + (i % 3) * 0.18, Math.sin(a) * radius * 0.45));
     }
   }
-  g.userData.top = height + 0.08;
+  g.userData.top = height + 0.2;
   g.userData.radius = radius;
-  g.userData.inlet = new Vector3(radius, height * 0.62, 0);
-  g.userData.outlet = new Vector3(-radius, height * 0.9, 0);
+  g.userData.portRight = portRight;
+  g.userData.portLeft = portLeft;
+  g.userData.inlet = portRight.clone();
+  g.userData.outlet = portLeft.clone();
   return g;
 }
 
 function pipe(spec) {
-  const mat = paint(spec, "#cfd8dc", spec.material || "metal");
-  const curve = new CatmullRomCurve3([
-    new Vector3(-0.8, 0.2, 0),
-    new Vector3(-0.3, 0.2, 0),
-    new Vector3(0, 0.55, 0),
-    new Vector3(0.35, 0.95, 0),
-    new Vector3(0.85, 0.95, 0),
-  ]);
-  const tube = new Mesh(new TubeGeometry(curve, 60, 0.07, 16, false), mat);
-  tube.castShadow = true;
-  const flange = metalMaterial("#90a4ae", 0.8, 0.3);
-  return G(
-    "Pipe",
-    tube,
-    spin(M(new CylinderGeometry(0.12, 0.12, 0.05, 20), flange, -0.8, 0.2, 0), 0, 0, Math.PI / 2),
-    spin(M(new CylinderGeometry(0.12, 0.12, 0.05, 20), flange, 0.85, 0.95, 0), 0, 0, Math.PI / 2),
-  );
+  const g = G("Pipe");
+  const color = spec.color || (spec.material === "copper" ? "#b87333" : "#90a4ae");
+  const points = [
+    new Vector3(-0.85, 0.18, 0),
+    new Vector3(-0.35, 0.18, 0),
+    new Vector3(-0.05, 0.48, 0),
+    new Vector3(0.28, 0.92, 0),
+    new Vector3(0.9, 0.92, 0),
+  ];
+  connectPoints(g, points, {
+    radius: 0.055,
+    color,
+    valve: true,
+    valveColor: "#ffb300",
+    supports: true,
+    elbowMat: paint(spec, color, spec.material || "metal"),
+  });
+  g.add(M(new BoxGeometry(0.16, 0.04, 0.08), metalMaterial("#37474f", 0.6, 0.4), -0.85, 0.04, 0));
+  g.add(M(new BoxGeometry(0.16, 0.04, 0.08), metalMaterial("#37474f", 0.6, 0.4), 0.9, 0.04, 0));
+  return g;
 }
 
 function pump(spec) {
   const body = paint(spec, "#1e88e5", spec.material || "metal");
   const g = G("Pump");
-  g.add(M(new RoundedBoxGeometry(0.55, 0.28, 0.4, 3, 0.04), metalMaterial("#37474f"), 0, 0.14, 0));
-  const motor = M(new CylinderGeometry(0.16, 0.16, 0.42, 24), body, 0, 0.36, 0);
-  spin(motor, 0, 0, Math.PI / 2);
+  g.add(M(new RoundedBoxGeometry(0.7, 0.12, 0.5, 2, 0.03), metalMaterial("#263238", 0.55, 0.45), 0, 0.06, 0));
+  boltRing(g, 0.12, 0.28, 4, null, 0.7);
+  g.add(M(new CylinderGeometry(0.2, 0.22, 0.16, 20), metalMaterial("#455a64", 0.7, 0.32), 0, 0.18, 0));
+  const volute = M(new TorusGeometry(0.16, 0.07, 8, 18), body, 0, 0.34, 0);
+  volute.rotation.x = Math.PI / 2;
+  g.add(volute);
+  g.add(M(new CylinderGeometry(0.08, 0.08, 0.04, 12), metalMaterial("#eceff1", 0.85, 0.25), 0, 0.34, 0.12));
+  const motor = M(new CylinderGeometry(0.13, 0.13, 0.36, 20), body, 0.02, 0.34, -0.02);
+  spin(motor, Math.PI / 2, 0, Math.PI / 2);
   g.add(motor);
-  const indicator = M(new BoxGeometry(0.08, 0.16, 0.08), glowingMaterial("#7ee0ff"), 0, 0.5, 0.12);
+  for (let i = 0; i < 6; i++) {
+    g.add(M(new BoxGeometry(0.3, 0.012, 0.02), metalMaterial("#0d47a1", 0.6, 0.4), 0.02, 0.34, -0.16 + i * 0.012));
+  }
+  const indicator = M(new BoxGeometry(0.08, 0.1, 0.04), glowingMaterial("#7ee0ff"), 0, 0.5, 0.16);
   indicator.name = "PumpLamp";
   g.add(indicator);
-  g.userData.inlet = new Vector3(-0.28, 0.36, 0);
-  g.userData.outlet = new Vector3(0.28, 0.36, 0);
+  const inlet = addNozzle(g, new Vector3(-0.22, 0.34, 0), new Vector3(-1, 0, 0), 0.045, metalMaterial("#90a4ae", 0.8, 0.28));
+  const outlet = addNozzle(g, new Vector3(0.22, 0.34, 0), new Vector3(1, 0, 0), 0.045, metalMaterial("#90a4ae", 0.8, 0.28));
+  g.userData.inlet = inlet;
+  g.userData.outlet = outlet;
   return g;
 }
 
@@ -1206,10 +1333,15 @@ function wall(spec) {
 }
 
 function prism(spec) {
-  const mesh = M(new CylinderGeometry(0.42, 0.42, 0.9, 3), paint(spec, "#7e57c2"));
+  const mat = paint(spec, "#7e57c2");
+  const mesh = M(new CylinderGeometry(0.38, 0.42, 0.9, 3), mat);
   mesh.rotation.y = Math.PI / 6;
-  mesh.position.y = 0.45;
-  return G("Prism", mesh);
+  mesh.position.y = 0.55;
+  const g = G("Prism", mesh);
+  g.add(M(new CylinderGeometry(0.5, 0.54, 0.08, 3), paint({}, "#4527a0", "stone"), 0, 0.04, 0));
+  g.add(M(new BoxGeometry(0.16, 0.04, 0.16), metalMaterial("#eceff1", 0.7, 0.3), 0, 1.02, 0));
+  for (const y of [0.3, 0.7]) g.add(M(new BoxGeometry(0.7, 0.03, 0.03), metalMaterial("#d1c4e9", 0.5, 0.35), 0, y, 0.22));
+  return g;
 }
 
 function shelf(spec) {
@@ -1503,6 +1635,8 @@ export function buildClassroom(spec) {
       const desk = table({ material: "wood", color: "#c4a574" });
       desk.scale.set(0.42, 0.72, 0.48);
       desk.position.set(x, 0, z);
+      desk.add(M(new BoxGeometry(0.16, 0.03, 0.12), paint({}, n % 2 ? "#5c6bc0" : "#e53935"), 0.12, 0.84, 0));
+      desk.add(M(new CylinderGeometry(0.03, 0.035, 0.06, 8), paint({}, "#fff8e1", "ceramic"), -0.12, 0.86, 0.04));
       g.add(desk);
       const seat = chair({ material: "wood", color: "#1e88e5" });
       seat.scale.setScalar(0.72);
@@ -1513,6 +1647,22 @@ export function buildClassroom(spec) {
     }
   }
   g.add(M(new BoxGeometry(0.55, 0.03, 0.12), new MeshStandardMaterial({ color: "#fff8e1", emissive: "#ffe082", emissiveIntensity: 0.7 }), 0, H - 0.02, 0.2));
+  for (let i = 0; i < 4; i++) {
+    g.add(M(new BoxGeometry(0.08, 0.06, D * 0.9), paint({}, i % 2 ? "#efe6d6" : "#e7d7c3", "wood"), -W / 2 + 0.35 + i * 0.85, H - 0.02, 0));
+  }
+  g.add(M(new BoxGeometry(W - 0.2, 0.06, 0.06), paint({}, "#bcaaa4", "wood"), 0, 0.14, -D / 2 + 0.08));
+  g.add(M(new BoxGeometry(0.06, 0.06, D - 0.2), paint({}, "#bcaaa4", "wood"), -W / 2 + 0.08, 0.14, 0));
+  g.add(M(new BoxGeometry(0.06, 0.06, D - 0.2), paint({}, "#bcaaa4", "wood"), W / 2 - 0.08, 0.14, 0));
+  const clock = M(new CylinderGeometry(0.12, 0.12, 0.03, 16), paint({}, "#f5f5f5"), W / 2 - 0.08, 1.15, -0.7);
+  clock.rotation.z = Math.PI / 2;
+  g.add(clock);
+  g.add(M(new BoxGeometry(0.01, 0.08, 0.01), paint({}, "#212121"), W / 2 - 0.1, 1.18, -0.7));
+  g.add(M(new BoxGeometry(0.42, 0.28, 0.02), paint({}, "#1565c0"), 0.35, 0.95, -D / 2 + 0.1));
+  g.add(M(new BoxGeometry(0.28, 0.16, 0.02), paint({}, "#43a047"), 0.95, 0.55, -D / 2 + 0.1));
+  g.add(M(new BoxGeometry(1.15, 0.04, 0.08), paint({}, "#6d4c41", "wood"), -0.55, 0.58, -D / 2 + 0.12));
+  g.add(M(new BoxGeometry(0.22, 0.16, 0.12), paint({}, "#5c6bc0", "fabric"), -W / 2 + 0.35, 0.16, 0.7));
+  g.add(M(new BoxGeometry(0.18, 0.14, 0.1), paint({}, "#ef6c00", "fabric"), -W / 2 + 0.55, 0.14, 0.85));
+  g.add(M(new CylinderGeometry(0.18, 0.2, 0.04, 16), paint({}, "#c62828", "fabric"), 0.2, 0.12, 0.35));
   tagEdit(g, { label: "Classroom", color: "#f7f1e6" });
   return g;
 }
@@ -1592,20 +1742,32 @@ export function buildFiltration(spec, ctx) {
   const fi = nodes.indexOf(filterNode);
   const fx = filterNode.x;
   const ud = filterNode.ref.userData;
+  const world = (node, key) => {
+    const local = node?.ref?.userData?.[key];
+    if (!local) return new Vector3(node?.x || 0, 0.8, 0);
+    return new Vector3((node.x || 0) + local.x, local.y, local.z);
+  };
+  const fitted = (flowColor, tubeColor, valveColor) => ({
+    color: flowColor,
+    tubeColor,
+    speed: 0.16,
+    tubeRadius: 0.058,
+    arrowColor: flowColor,
+    arrowLength: 0.16,
+    arrowRadius: 0.048,
+    fittings: true,
+    supports: true,
+    valveColor,
+  });
   for (let i = 0; i < nodes.length - 1; i++) {
     if (i === fi || i + 1 === fi) continue;
     const a = nodes[i];
     const b = nodes[i + 1];
     const dirtySide = a.role === "dirty" || a.role === "settle";
-    const start = new Vector3(a.x + a.ref.userData.radius * 0.85, (a.ref.userData.top || 1) * 0.68, 0);
-    const end = new Vector3(b.x - b.ref.userData.radius * 0.85, (b.ref.userData.top || 1) * 0.6, 0);
-    const lift = Math.max(start.y, end.y) + 0.24;
-    addFlow(g, [start, new Vector3(start.x, lift, 0), new Vector3(end.x, lift, 0), end], 4, {
-      color: dirtySide ? "#a1887f" : "#4fc3f7",
-      speed: 0.16,
-      tubeRadius: 0.04,
-      arrowColor: dirtySide ? "#bcaaa4" : "#81d4fa",
-    });
+    const start = world(a, "portRight");
+    const end = world(b, "portLeft");
+    const lift = Math.max(start.y, end.y) + 0.32;
+    addFlow(g, [start, new Vector3(start.x, lift, start.z), new Vector3(end.x, lift, end.z), end], 5, fitted(dirtySide ? "#a1887f" : "#4fc3f7", dirtySide ? "#8d6e63" : "#1565c0", dirtySide ? "#ffb300" : "#29b6f6"));
   }
 
   const fallTop = ud.fallTop.clone();
@@ -1618,7 +1780,6 @@ export function buildFiltration(spec, ctx) {
   const pumpMesh = pump({ color: "#1e88e5", material: "metal" });
   const pumpX = prev ? (prev.x + fx) * 0.5 : fx - 0.95;
   pumpMesh.position.set(pumpX, 0, 0.82);
-  pumpMesh.scale.setScalar(0.9);
   tagEdit(pumpMesh, { label: tr("pump"), color: "#1e88e5" });
   g.add(pumpMesh);
   const pumpTag = label(tr("pump"), { rtl: lang === "ar", width: 0.72 });
@@ -1631,22 +1792,25 @@ export function buildFiltration(spec, ctx) {
     };
   }
 
-  const above = (ud.top || fallTop.y) + 0.14;
-  const source = prev
-    ? new Vector3(prev.x + prev.ref.userData.radius * 0.75, (prev.ref.userData.top || 1.2) * 0.58, 0.08)
-    : new Vector3(pumpX - 0.2, 0.72, 0.82);
+  const pumpScale = 0.85;
+  pumpMesh.scale.setScalar(pumpScale);
+  const pumpAt = new Vector3(pumpX, 0, 0.82);
+  const pumpIn = pumpMesh.userData.inlet.clone().multiplyScalar(pumpScale).add(pumpAt);
+  const pumpOut = pumpMesh.userData.outlet.clone().multiplyScalar(pumpScale).add(pumpAt);
+  const source = prev ? world(prev, "portRight") : pumpIn.clone();
+  const colIn = world(filterNode, "portIn");
+  const above = (ud.top || fallTop.y) + 0.28;
   addFlow(
     g,
-    [
-      source,
-      new Vector3(pumpX - 0.24, 0.42, 0.82),
-      new Vector3(pumpX + 0.24, 0.42, 0.82),
-      new Vector3(pumpX + 0.24, above, 0.42),
-      new Vector3(fallTop.x, above, fallTop.z),
-      fallTop,
-    ],
+    [source, new Vector3(source.x + 0.05, source.y, 0.42), new Vector3(pumpIn.x - 0.02, pumpIn.y, pumpIn.z), pumpIn],
+    5,
+    fitted("#e08a3c", "#d4843a", "#ff6f00"),
+  );
+  addFlow(
+    g,
+    [pumpOut, new Vector3(pumpOut.x, above, pumpOut.z), new Vector3(colIn.x, above, colIn.z + 0.02), colIn],
     6,
-    { color: "#e08a3c", speed: 0.13, radius: 0.046, tubeRadius: 0.04, arrowColor: "#e0b080" },
+    fitted("#ff8a3d", "#ef6c00", "#ff6f00"),
   );
 
   const fallMid = fallTop.clone().lerp(fallBottom, 0.5);
@@ -1686,19 +1850,18 @@ export function buildFiltration(spec, ctx) {
   const wasteTag = label(tr("wasteBin"), { rtl: lang === "ar", accent: "#bcaaa4", width: 1.02 });
   wasteTag.position.set(bin.position.x, bin.userData.top + 0.34, bin.position.z);
   g.add(wasteTag);
-  const outFront = new Vector3(wasteJoin.x, wasteJoin.y, wasteJoin.z + 0.55);
-  const wasteEnd = new Vector3(bin.position.x, bin.userData.top - 0.03, bin.position.z);
+  const wasteStart = world(filterNode, "wastePort");
+  const wasteEnd = new Vector3(bin.position.x, bin.userData.top - 0.02, bin.position.z);
   addFlow(
     g,
     [
-      wasteJoin,
-      outFront,
-      new Vector3(bin.position.x, wasteJoin.y + 0.08, bin.position.z + 0.08),
-      new Vector3(bin.position.x, bin.userData.top + 0.14, bin.position.z),
+      wasteStart,
+      new Vector3(wasteStart.x, wasteStart.y, wasteStart.z + 0.28),
+      new Vector3(bin.position.x, Math.max(wasteStart.y, bin.userData.top + 0.08), bin.position.z),
       wasteEnd,
     ],
     5,
-    { color: "#c4622d", speed: 0.2, radius: 0.048, tubeRadius: 0.03, arrowColor: "#e09a6a", stream: true, streamRadius: 0.02, dirty: true, wobble: 0.008 },
+    { ...fitted("#c4622d", "#6d4c41", "#a1887f"), supports: false, stream: true, streamRadius: 0.02 },
   );
   const swirl = new Vector3(bin.position.x, 0.2, bin.position.z);
   addFlow(
@@ -1714,24 +1877,40 @@ export function buildFiltration(spec, ctx) {
   );
 
   const next = nodes[fi + 1];
-  const outlet = ud.outlet.clone();
-  outlet.x += fx;
-  const cleanLip = next
-    ? new Vector3(next.x, (next.ref.userData.top || 1.3) + 0.02, 0.02)
-    : new Vector3(fx + 1.25, 1.15, 0);
-  const cleanEnd = next
-    ? new Vector3(next.x, (next.ref.userData.top || 1.3) * 0.58, 0.02)
-    : new Vector3(cleanLip.x, 0.7, 0);
+  const colOut = world(filterNode, "portOut");
+  const cleanEnd = next ? world(next, "portLeft") : new Vector3(fx + 1.35, 0.7, 0);
+  const midY = Math.max(colOut.y, cleanEnd.y) + 0.26;
   addFlow(
     g,
-    [fallBottom, outlet, new Vector3(outlet.x + 0.28, cleanLip.y, 0.06), cleanLip, cleanEnd],
+    [colOut, new Vector3(colOut.x + 0.28, midY, 0.16), new Vector3(cleanEnd.x - 0.18, midY, cleanEnd.z), cleanEnd],
     6,
-    { color: "#4fc3f7", speed: 0.15, radius: 0.04, tubeRadius: 0.04, arrowColor: "#81d4fa" },
+    fitted("#4fc3f7", "#1565c0", "#29b6f6"),
   );
 
+  const panel = G("ControlPanel");
+  panel.add(M(new RoundedBoxGeometry(0.78, 0.46, 0.08, 2, 0.02), metalMaterial("#263238", 0.62, 0.38), 0, 0.38, 0));
+  panel.add(M(new BoxGeometry(0.46, 0.18, 0.02), paint({}, "#0d47a1"), 0, 0.5, 0.05));
+  panel.add(M(new BoxGeometry(0.28, 0.03, 0.012), paint({}, "#e1f5fe"), -0.04, 0.54, 0.065));
+  panel.add(M(new SphereGeometry(0.035, 10, 8), glowingMaterial("#43a047"), -0.24, 0.28, 0.05));
+  panel.add(M(new SphereGeometry(0.035, 10, 8), glowingMaterial("#ffb300"), 0, 0.28, 0.05));
+  panel.add(M(new SphereGeometry(0.035, 10, 8), glowingMaterial("#e53935"), 0.24, 0.28, 0.05));
+  panel.position.set(fx + 0.15, 0, 1.55);
+  g.add(panel);
+  const legend = label(lang === "ar" ? "المسار: خام ← العمود ← نقي" : "Path: raw → column → clean", {
+    rtl: lang === "ar",
+    accent: "#4fc3f7",
+    width: 1.85,
+  });
+  legend.position.set(fx + 0.15, 0.95, 1.55);
+  g.add(legend);
+
   const span = width + 2.8;
-  g.add(M(new RoundedBoxGeometry(Math.max(span, 3.2), 0.08, 2.55, 3, 0.02), metalMaterial("#263238", 0.5, 0.55), 0, 0.02, 0.32));
-  g.rotation.y = 0.62;
+  g.add(M(new RoundedBoxGeometry(Math.max(span, 3.4), 0.1, 3.15, 3, 0.02), metalMaterial("#263238", 0.5, 0.55), 0, 0.03, 0.35));
+  for (const x of [-span / 2, span / 2]) {
+    g.add(M(new CylinderGeometry(0.06, 0.07, 0.08, 10), metalMaterial("#455a64", 0.6, 0.4), x, 0.04, -0.7));
+    g.add(M(new CylinderGeometry(0.06, 0.07, 0.08, 10), metalMaterial("#455a64", 0.6, 0.4), x, 0.04, 1.3));
+  }
+  g.rotation.y = 0.42;
   return g;
 }
 
@@ -1793,8 +1972,15 @@ export function buildAquaponics(spec, ctx) {
   g.add(pumpMesh);
   addFlow(
     g,
-    [new Vector3(-0.2, 0.7, 0), new Vector3(-0.2, 1.15, 0), new Vector3(0.95, 1.15, 0), new Vector3(0.95, 1.02, 0)],
-    3,
+    [new Vector3(-0.35, 0.72, 0.05), new Vector3(-0.35, 1.25, 0.15), new Vector3(0.95, 1.25, 0.05), new Vector3(0.95, 1.05, 0)],
+    4,
+    { fittings: true, tubeRadius: 0.05, tubeColor: "#1565c0", color: "#4fc3f7", valveColor: "#29b6f6", supports: true, arrowLength: 0.14, arrowRadius: 0.04 },
+  );
+  addFlow(
+    g,
+    [new Vector3(0.95, 0.95, 0.2), new Vector3(1.15, 0.55, 0.45), new Vector3(-0.55, 0.55, 0.35), new Vector3(-0.85, 0.62, 0.05)],
+    4,
+    { fittings: true, tubeRadius: 0.042, tubeColor: "#2e7d32", color: "#66bb6a", valveColor: "#43a047", supports: true, arrowLength: 0.12, arrowRadius: 0.035 },
   );
   const title = label(tr("aquaponicsTitle"), { rtl: lang === "ar", accent: "#80cbc4", width: 1.5 });
   title.position.set(0, 1.95, 0);
@@ -1890,11 +2076,104 @@ const BUILDERS = {
   abstract,
 };
 
+const SELF_DETAILED = new Set(["cube", "sphere", "cylinder", "cone", "torus", "pyramid", "capsule", "prism", "pipe", "pump", "tank", "filter", "abstract", "gear"]);
+
 export function buildObject(spec, ctx = {}) {
   const fn = BUILDERS[spec.type] || abstract;
   const group = fn(spec, ctx);
+  if (!SELF_DETAILED.has(spec.type)) enrichModel(group, spec);
   group.userData.kind = spec.type;
-  const label = ctx.partLabel ? ctx.partLabel(spec.type) : group.name || spec.type;
-  tagEdit(group, { label, color: spec.color || null });
+  const partLabel = ctx.partLabel ? ctx.partLabel(spec.type) : group.name || spec.type;
+  tagEdit(group, { label: partLabel, color: spec.color || null });
   return group;
+}
+
+export function buildRoom(spec, ctx = {}) {
+  const g = G("Room");
+  const W = 3.6;
+  const D = 2.7;
+  const H = 1.45;
+  const wall = facadeMaterial({}, spec.room?.id === "laboratory" ? "#e3f2fd" : "#f7f1e6", "plaster");
+  const floorMat = spec.room?.id === "kitchen" || spec.room?.id === "bathroom" ? paint({}, "#cfd8dc", "stone") : paint({}, "#b08968", "wood");
+  g.add(M(new BoxGeometry(W + 0.2, 0.08, D + 0.2), floorMat, 0, 0.04, 0));
+  g.add(M(new BoxGeometry(W, H, 0.08), wall, 0, H / 2 + 0.06, -D / 2));
+  g.add(M(new BoxGeometry(0.08, H, D), wall, -W / 2, H / 2 + 0.06, 0));
+  g.add(M(new BoxGeometry(0.08, H, D), wall, W / 2, H / 2 + 0.06, 0));
+  g.add(M(new BoxGeometry(W, 0.08, 0.08), paint({}, "#b0bec5", "stone"), 0, H + 0.02, D / 2));
+  for (let i = 0; i < 3; i++) g.add(M(new BoxGeometry(0.08, 0.06, D * 0.86), paint({}, "#d7ccc8", "wood"), -0.9 + i * 0.9, H - 0.02, 0));
+  addEntryDoor(g, { x: -W / 2 + 0.02, z: 0.2, yaw: Math.PI / 2, width: 0.36, height: 0.78, material: "wood", color: "#6d4c41" });
+  const win = windowObj({ material: "glass" });
+  win.scale.setScalar(0.7);
+  win.position.set(W / 2 - 0.2, 0.2, -0.2);
+  win.rotation.y = -Math.PI / 2;
+  g.add(win);
+  const title = label(spec.room?.id || "room", { rtl: ctx.lang === "ar", accent: "#5ad1ff", width: 1.1 });
+  title.position.set(0, H + 0.28, 0);
+  g.add(title);
+  let i = 0;
+  for (const item of spec.objects || []) {
+    const copies = Math.max(1, item.count || 1);
+    for (let c = 0; c < copies; c++) {
+      const node = buildObject({ ...item, count: 1 }, ctx);
+      const col = i % 3;
+      const row = Math.floor(i / 3);
+      node.position.set(-0.95 + col * 0.95, 0, -0.55 + row * 0.75);
+      node.scale.multiplyScalar(0.62);
+      g.add(node);
+      i += 1;
+    }
+  }
+  tagEdit(g, { label: spec.room?.id || "Room", color: "#f7f1e6" });
+  return g;
+}
+
+export function buildPlumbing(spec, ctx = {}) {
+  const g = G("Plumbing");
+  const lang = ctx.lang || "en";
+  const tr = ctx.tr || ((k) => k);
+  const tint = spec.plumbing?.color || "#4fc3f7";
+  const left = buildVessel({ radius: 0.42, height: 1.05, water: tint, dirty: true });
+  left.position.set(-1.15, 0, 0);
+  tagEdit(left, { label: tr("dirtyTank"), color: tint });
+  g.add(left);
+  const right = buildVessel({ radius: 0.42, height: 1.05, water: "#4fc3f7", dirty: false });
+  right.position.set(1.15, 0, 0);
+  tagEdit(right, { label: tr("cleanTank"), color: "#4fc3f7" });
+  g.add(right);
+  const headerY = 1.35;
+  const manifold = [
+    new Vector3(-1.15 + (left.userData.portRight?.x || 0.5), left.userData.portRight?.y || 0.7, 0),
+    new Vector3(-0.55, headerY, 0),
+    new Vector3(0.55, headerY, 0),
+    new Vector3(1.15 + (right.userData.portLeft?.x || -0.5), right.userData.portLeft?.y || 0.45, 0),
+  ];
+  addFlow(g, manifold, 5, {
+    color: tint,
+    tubeColor: "#607d8b",
+    tubeRadius: 0.06,
+    fittings: true,
+    supports: true,
+    valveColor: "#ffb300",
+    arrowColor: "#e1f5fe",
+    arrowLength: 0.16,
+    arrowRadius: 0.045,
+  });
+  for (const x of [-0.35, 0.35]) {
+    addFlow(
+      g,
+      [new Vector3(x, headerY, 0), new Vector3(x, 0.35, 0.35), new Vector3(x, 0.35, 0.7)],
+      3,
+      { color: "#90a4ae", tubeColor: "#78909c", tubeRadius: 0.045, fittings: true, valveColor: "#29b6f6", supports: true, arrows: 2 },
+    );
+  }
+  const pumpMesh = pump({ material: "metal", color: "#1e88e5" });
+  pumpMesh.position.set(0, 0, -0.55);
+  pumpMesh.scale.setScalar(0.85);
+  tagEdit(pumpMesh, { label: tr("pump"), color: "#1e88e5" });
+  g.add(pumpMesh);
+  const title = label(lang === "ar" ? "شبكة مواسير" : "Plumbing manifold", { rtl: lang === "ar", accent: "#90a4ae", width: 1.4 });
+  title.position.set(0, 1.85, 0);
+  g.add(title);
+  g.add(M(new RoundedBoxGeometry(3.2, 0.08, 2.1, 2, 0.02), metalMaterial("#263238", 0.5, 0.5), 0, 0.02, 0.1));
+  return g;
 }

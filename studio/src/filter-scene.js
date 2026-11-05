@@ -20,6 +20,7 @@ import {
   Vector3,
 } from "three";
 import { G, M, label, spin } from "./builders.js";
+import { addNozzle, boltRing, dressPipe } from "./kit.js";
 import { LAYER_COLORS, glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, waterMaterial } from "./materials.js";
 import { isFast, seg } from "./quality.js";
 
@@ -71,11 +72,11 @@ function layerWeight(id) {
 }
 
 const MEDIA = {
-  sand: { kind: "grains", count: 210, size: 0.062, stretch: 0.55, colors: ["#f8e7b8", "#e8c56a", "#c9943c", "#fff6d2", "#a56a28", "#f0d48a"] },
-  coarseSand: { kind: "grains", count: 78, size: 0.092, stretch: 0.6, colors: ["#d39a45", "#a86a28", "#e8b86a", "#7a4e18", "#f0c27a"] },
-  charcoal: { kind: "chunks", count: 26, size: 0.1, stretch: 0.9, colors: ["#2c2c2c", "#101010", "#45403c", "#1a1614", "#5a5048"] },
-  gravel: { kind: "stones", count: 28, size: 0.1, stretch: 0.48, colors: ["#d5cfc2", "#8e877c", "#eee6da", "#6a6358", "#b7ad9e"] },
-  coarseGravel: { kind: "stones", count: 12, size: 0.16, stretch: 0.42, colors: ["#9a9184", "#5c564c", "#d2c6b4", "#3f3a34", "#ece3d4"] },
+  sand: { kind: "grains", count: 340, size: 0.058, stretch: 0.55, colors: ["#f8e7b8", "#e8c56a", "#c9943c", "#fff6d2", "#a56a28", "#f0d48a"] },
+  coarseSand: { kind: "grains", count: 140, size: 0.086, stretch: 0.6, colors: ["#d39a45", "#a86a28", "#e8b86a", "#7a4e18", "#f0c27a"] },
+  charcoal: { kind: "chunks", count: 42, size: 0.09, stretch: 0.9, colors: ["#2c2c2c", "#101010", "#45403c", "#1a1614", "#5a5048"] },
+  gravel: { kind: "stones", count: 46, size: 0.09, stretch: 0.48, colors: ["#d5cfc2", "#8e877c", "#eee6da", "#6a6358", "#b7ad9e"] },
+  coarseGravel: { kind: "stones", count: 22, size: 0.14, stretch: 0.42, colors: ["#9a9184", "#5c564c", "#d2c6b4", "#3f3a34", "#ece3d4"] },
   pebbles: { kind: "stones", count: 22, size: 0.062, stretch: 0.2, round: true, colors: ["#ece6dc", "#c4a890", "#f7f4ee", "#a88878"] },
   ceramic: { kind: "rings", count: 16, colors: ["#d4765a", "#c4553a", "#e8b39a"] },
   bioballs: { kind: "balls", count: 12, colors: ["#eef3f6", "#c5d0d8", "#f7fbff"] },
@@ -382,7 +383,7 @@ function addFilterRings(group, y, height, radius, cut) {
 }
 
 function addSandGrains(group, y, height, radius, cut) {
-  const count = isFast() ? 32 : 130;
+  const count = isFast() ? 48 : 240;
   const geo = new IcosahedronGeometry(1, 0);
   const mat = new MeshStandardMaterial({ color: "#f0d48a", roughness: 1 });
   const mesh = new InstancedMesh(geo, mat, count);
@@ -417,7 +418,7 @@ function addCleanBed(group, id, y, height, radius, cut) {
   }
   if (id === "fineFilter") {
     addSolidBed(group, y, height, radius, cut, filterPadMaterial(false));
-    addFilterPleats(group, y, height, radius, cut, seg(34, 12), Math.max(0.004, radius * 0.009), "#f7fbff");
+    addFilterPleats(group, y, height, radius, cut, seg(56, 16), Math.max(0.004, radius * 0.008), "#f7fbff");
     const gauze = pieCylinder(radius * 0.84, radius * 0.84, 0.01, layerMaterial("screen"), cut, seg(32, 16));
     gauze.position.y = y + height * 0.36;
     group.add(gauze);
@@ -428,7 +429,7 @@ function addCleanBed(group, id, y, height, radius, cut) {
   }
   if (id === "coarseFilter") {
     addSolidBed(group, y, height, radius, cut, filterPadMaterial(true));
-    addFilterPleats(group, y, height, radius, cut, seg(7, 4), Math.max(0.036, radius * 0.09), "#3f6f88");
+    addFilterPleats(group, y, height, radius, cut, seg(12, 6), Math.max(0.03, radius * 0.07), "#3f6f88");
     addFilterRings(group, y, height, radius, cut);
     return;
   }
@@ -578,9 +579,47 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
   g.userData.fallTop = new Vector3(gx * fallR, cap.position.y, gz * fallR);
   g.userData.fallBottom = new Vector3(gx * fallR * 0.75, pool.position.y, gz * fallR * 0.75);
   g.userData.wasteJoin = new Vector3(gx * fallR, wasteY + gap * 0.35, gz * fallR);
-  g.userData.inlet = new Vector3(-radius, y0 + h * 0.92, 0);
-  g.userData.outlet = new Vector3(radius * 0.96, pool.position.y, 0.03);
+  const shellMetal = metalMaterial("#cfd8dc", 0.82, 0.28);
+  const portIn = addNozzle(g, new Vector3(-radius, y0 + h * 0.9, 0.04), new Vector3(-1, 0, 0), 0.05, shellMetal);
+  const portOut = addNozzle(g, new Vector3(radius, pool.position.y, 0.04), new Vector3(1, 0, 0), 0.05, shellMetal);
   const binAngle = 1.16;
+  const wasteDir = new Vector3(Math.sin(binAngle), 0, Math.cos(binAngle));
+  const wastePort = addNozzle(
+    g,
+    new Vector3(wasteDir.x * radius, wasteY + gap * 0.15, wasteDir.z * radius),
+    wasteDir,
+    0.042,
+    metalMaterial("#8d6e63", 0.7, 0.34),
+  );
+  for (let i = 0; i < 3; i++) {
+    const ang = cut.start + ((i + 0.5) / 3) * cut.length;
+    g.add(M(new CylinderGeometry(0.012, 0.012, h * 0.92, 8), shellMetal, Math.sin(ang) * (radius + 0.028), y0 + h / 2, Math.cos(ang) * (radius + 0.028)));
+  }
+  boltRing(g, y0 + h + 0.01, radius * 0.86, 10, null, 0.85);
+  boltRing(g, y0 + 0.08, radius * 0.9, 8, null, 0.8);
+  const rose = M(new TorusGeometry(radius * 0.42, 0.012, 6, 18), shellMetal, gx * radius * 0.05, cap.position.y + capH * 0.15, gz * radius * 0.05);
+  rose.rotation.x = Math.PI / 2;
+  g.add(rose);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    g.add(M(new BoxGeometry(radius * 0.5, 0.012, 0.012), shellMetal, Math.cos(a) * radius * 0.12, rose.position.y, Math.sin(a) * radius * 0.12));
+  }
+  const mid = cut.start + cut.length / 2;
+  const lx = Math.sin(mid) * (radius + 0.09);
+  const lz = Math.cos(mid) * (radius + 0.09);
+  g.add(M(new CylinderGeometry(0.012, 0.012, h * 0.8, 6), shellMetal, lx - 0.06, y0 + h * 0.48, lz));
+  g.add(M(new CylinderGeometry(0.012, 0.012, h * 0.8, 6), shellMetal, lx + 0.06, y0 + h * 0.48, lz));
+  const rungs = isFast() ? 4 : 7;
+  for (let i = 0; i < rungs; i++) {
+    const rung = M(new CylinderGeometry(0.008, 0.008, 0.14, 6), shellMetal, lx, y0 + 0.28 + i * ((h * 0.7) / rungs), lz);
+    rung.rotation.z = Math.PI / 2;
+    g.add(rung);
+  }
+  g.userData.inlet = portIn;
+  g.userData.portIn = portIn;
+  g.userData.outlet = portOut;
+  g.userData.portOut = portOut;
+  g.userData.wastePort = wastePort;
   g.userData.wasteBin = new Vector3(Math.sin(binAngle) * (radius + 0.64), 0, Math.cos(binAngle) * (radius + 0.64));
   return g;
 }
@@ -697,7 +736,18 @@ export function addFlow(group, points, count = 3, opts = {}) {
     group.userData.flows = [];
     group.userData.flowTick = (time, live) => animateFlows(group, time, !!live);
   }
-  group.userData.flows.push({
+    if (opts.fittings && opts.tube !== false) {
+      dressPipe(group, curve, points, {
+        radius: opts.tubeRadius ?? 0.05,
+        color: opts.tubeColor || color,
+        valve: opts.valve !== false,
+        valveColor: opts.valveColor || opts.arrowColor || color,
+        supports: !!opts.supports,
+        flange: opts.flange !== false,
+        clamps: opts.clamps !== false,
+      });
+    }
+    group.userData.flows.push({
     curve,
     beads,
     speed: opts.speed ?? 0.18,

@@ -202,6 +202,46 @@ test("cutaway marks a cylinder and the scene", () => {
   assert.equal(s.interior, true);
 });
 
+test("rooms, relations, finishes and plumbing", () => {
+  const kitchen = parsePrompt("a red kitchen");
+  assert.equal(kitchen.mode, "room");
+  assert.equal(kitchen.room.id, "kitchen");
+  assert.ok(kitchen.objects.some((o) => o.type === "cabinet"));
+  assert.ok(kitchen.objects.some((o) => o.color === "#e53935"));
+  const bedroom = parsePrompt("غرفة نوم");
+  assert.equal(bedroom.mode, "room");
+  assert.equal(bedroom.room.id, "bedroom");
+  assert.ok(bedroom.objects.some((o) => o.type === "bed"));
+  const inside = parsePrompt("a glass sphere inside a red cube");
+  const sphere = inside.objects.find((o) => o.type === "sphere");
+  const cube = inside.objects.find((o) => o.type === "cube");
+  assert.equal(sphere.material, "glass");
+  assert.equal(sphere.slot, "inside");
+  assert.equal(sphere.anchor, inside.objects.indexOf(cube));
+  assert.equal(cube.color, "#e53935");
+  const linked = parsePrompt("a pair of red metal pipes connected to a blue tank");
+  const pipe = linked.objects.find((o) => o.type === "pipe");
+  const tank = linked.objects.find((o) => o.type === "tank");
+  assert.equal(pipe.count, 2);
+  assert.equal(pipe.color, "#e53935");
+  assert.equal(pipe.material, "metal");
+  assert.equal(pipe.slot, "connected");
+  assert.equal(pipe.anchor, linked.objects.indexOf(tank));
+  assert.equal(tank.color, "#1e88e5");
+  const gears = parsePrompt("half a dozen polished brass gears");
+  assert.equal(gears.objects[0].type, "gear");
+  assert.equal(gears.objects[0].count, 6);
+  assert.equal(gears.objects[0].finish, "polished");
+  assert.equal(gears.objects[0].material, "copper");
+  const plumbing = parsePrompt("a plumbing system with a blue tank");
+  assert.equal(plumbing.mode, "plumbing");
+  assert.equal(plumbing.plumbing.color, "#1e88e5");
+  const office = parsePrompt("مختبر");
+  assert.equal(office.mode, "room");
+  assert.equal(office.room.id, "laboratory");
+  assert.ok(office.objects.some((o) => o.type === "microscope"));
+});
+
 test("improve description and suggestions", () => {
   assert.match(improvePrompt("classroom"), /window/i);
   assert.match(improvePrompt("school"), /school/i);

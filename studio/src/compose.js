@@ -1,5 +1,6 @@
 import { Box3, Group, Vector3 } from "three";
-import { buildAquaponics, buildClassroom, buildFiltration, buildObject, resetEditIds } from "./builders.js";
+import { buildAquaponics, buildClassroom, buildFiltration, buildObject, buildPlumbing, buildRoom, resetEditIds } from "./builders.js";
+import { connectPoints } from "./kit.js";
 
 function metricsOf(group) {
   group.updateMatrixWorld(true);
@@ -82,7 +83,10 @@ function layoutObjects(list, ctx) {
       const hz = host.group.position.z;
       if (slot === "on") entry.group.position.set(hx + spread * (entry.w + 0.08), hy + host.h, hz);
       else if (slot === "under") entry.group.position.set(hx + spread * 0.25, hy, hz);
-      else if (slot === "left") entry.group.position.set(hx - host.w / 2 - entry.w / 2 - 0.32 + spread * (entry.w + 0.12), hy, hz);
+      else if (slot === "inside") {
+        entry.group.position.set(hx + spread * 0.12, hy + host.h * 0.42, hz);
+        entry.group.scale.multiplyScalar(0.42);
+      } else if (slot === "left") entry.group.position.set(hx - host.w / 2 - entry.w / 2 - 0.32 + spread * (entry.w + 0.12), hy, hz);
       else if (slot === "behind") entry.group.position.set(hx, hy, hz - host.d / 2 - entry.d / 2 - 0.28 + spread * 0.2);
       else if (slot === "front") entry.group.position.set(hx, hy, hz + host.d / 2 + entry.d / 2 + 0.28 + spread * 0.2);
       else entry.group.position.set(hx + host.w / 2 + entry.w / 2 + 0.32 + spread * (entry.w + 0.12), hy, hz);
@@ -91,9 +95,31 @@ function layoutObjects(list, ctx) {
     }
   }
 
+  entries.forEach((entry) => {
+    if (entry.spec.slot !== "between" || !entry.placed) return;
+    const others = entries.filter((other) => other !== entry && other.placed);
+    if (others.length < 2) return;
+    const a = others[0].group.position;
+    const b = others[1].group.position;
+    entry.group.position.set((a.x + b.x) / 2, 0, (a.z + b.z) / 2);
+  });
+
   const wrap = new Group();
   wrap.name = "Objects";
   entries.forEach((entry) => wrap.add(entry.group));
+  entries.forEach((entry) => {
+    if (entry.spec.slot !== "connected" || !entry.placed) return;
+    const hostSource = entry.spec.anchor;
+    const host = entries[firstOf.get(hostSource)];
+    if (!host?.placed) return;
+    const a = host.group.position.clone();
+    a.y += Math.max(0.25, host.h * 0.45);
+    const b = entry.group.position.clone();
+    b.y += Math.max(0.25, entry.h * 0.45);
+    const mid = a.clone().lerp(b, 0.5);
+    mid.y += 0.38;
+    connectPoints(wrap, [a, mid, b], { radius: 0.045, color: "#90a4ae", valve: true, valveColor: "#ffb300" });
+  });
   return wrap;
 }
 
@@ -116,7 +142,9 @@ export function buildSpec(spec, ctx = {}) {
   if (spec.mode === "filtration") root.add(buildFiltration(spec, view));
   if (spec.mode === "aquaponics") root.add(buildAquaponics(spec, view));
   if (spec.mode === "classroom") root.add(buildClassroom(spec, view));
-  const extras = layoutObjects(spec.objects || [], view);
+  if (spec.mode === "room") root.add(buildRoom(spec, view));
+  if (spec.mode === "plumbing") root.add(buildPlumbing(spec, view));
+  const extras = spec.mode === "room" ? null : layoutObjects(spec.objects || [], view);
   if (extras) {
     root.updateMatrixWorld(true);
     const have = new Box3().setFromObject(root);

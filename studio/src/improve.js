@@ -162,6 +162,24 @@ export function improvePrompt(text) {
       ? "صف دراسي فيه طاولات وكراسي وسبورة وشاشة وباب ونوافذ"
       : "a classroom with desks, chairs, a whiteboard, a screen, a door and windows";
   }
+  if (spec.mode === "room") {
+    const roomLine = {
+      kitchen: ["مطبخ بخزانة وطاولة خشبية وكرسيين وزجاجة وكوب ومصباح", "a kitchen with a cabinet, a wooden table, two chairs, a bottle, a cup and a lamp"],
+      bedroom: ["غرفة نوم بسرير وخزانة ومصباح ورف", "a bedroom with a bed, a cabinet, a lamp and a shelf"],
+      living: ["غرفة معيشة بأريكة وطاولة ومصباح ورف ونبات", "a living room with a sofa, a wooden table, a lamp, a shelf and a plant"],
+      bathroom: ["حمام بخزان وخزانة ومصباح وزجاجة", "a bathroom with a tank, a cabinet, a lamp and a bottle"],
+      garage: ["كراج بسيارة وخزانة ومضخة وأنبوب", "a garage with a car, a cabinet, a pump and a pipe"],
+      library: ["مكتبة برف وكتب وطاولة وكرسي ومصباح", "a library with a shelf, books, a table, a chair and a lamp"],
+      office: ["غرفة مكتب بطاولة وكرسي وشاشة ومصباح ورف", "an office with a table, a chair, a screen, a lamp and a shelf"],
+      laboratory: ["مختبر بطاولة ومجهر ودورق زجاجي وذرة ومصباح", "a laboratory with a table, a microscope, a glass beaker, an atom and a lamp"],
+    }[spec.room?.id];
+    if (roomLine) return lang === "ar" ? roomLine[0] : roomLine[1];
+  }
+  if (spec.mode === "plumbing") {
+    return lang === "ar"
+      ? "شبكة مواسير بخزانين ومضخة وصمامات"
+      : "a plumbing system with two tanks, a pump, valves and a manifold";
+  }
   if (spec.mode === "filtration") return filtrationText(spec.filtration?.tanks, lang);
   if (spec.mode === "aquaponics") return aquaponicsText(spec, lang);
   if (spec.unknown) {

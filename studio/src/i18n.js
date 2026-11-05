@@ -514,7 +514,7 @@ export const PRESETS = [
     icon: "💧",
     featured: true,
     name: ["نظام ترشيح المياه", "Water filtration"],
-    desc: ["أربع طبقات: رمل، فلتران، إسفنج", "Four layers: sand, two filters, sponge"],
+    desc: ["مواسير بفلنجات، فتحات، وأربع طبقات كثيفة", "Flanged pipes, nozzles, and four dense layers"],
     prompt: [
       "نظام ترشيح مياه بخزانين شفافين وأسطوانة فلتر من أربع طبقات متصلة: رمل جاف ثم فلتر ناعم ثم فلتر أكبر ثم إسفنج",
       "Water filtration system with two transparent tanks and a four-layer filter column: dry sand, a fine filter, a larger filter, and a sponge",

@@ -241,6 +241,9 @@ const COLORS = {
   "#00bcd4": ["cyan", "sky blue", "سماوي", "تركوازي", "فيروزي"],
   "#d7c4a3": ["beige", "cream", "بيج", "كريمي"],
   "#00897b": ["teal", "تركواز"],
+  "#6d1b2a": ["maroon", "burgundy", "خمري", "عنابي"],
+  "#6b8e23": ["olive", "زيتوني"],
+  "#fffff0": ["ivory", "عاجي"],
 };
 
 for (const [hex, phrases] of Object.entries(COLORS)) add(phrases, color(hex));
@@ -261,6 +264,10 @@ add(["rubber", "matte", "مطاط"], material("rubber"));
 add(["water", "ماء", "مياه"], material("water"));
 add(["ceramic", "سيراميك"], material("ceramic"));
 add(["copper", "نحاس", "نحاسي"], material("copper"));
+add(["stainless", "stainless steel", "ستانلس ستيل", "فولاذ مقاوم"], material("metal"));
+add(["brass", "bronze", "نحاس اصفر", "برونز"], material("copper"));
+add(["pvc", "بي في سي"], material("plastic"));
+add(["plywood", "oak", "pine wood", "خشب بلوط"], material("wood"));
 add(["fabric", "قماش مفروشات"], material("fabric"));
 add(
   ["glowing", "neon", "luminous", "shiny", "مضيء", "مضيء", "مضيئه", "متوهج", "نيون", "لامع", "منير", "مشع"],
@@ -284,6 +291,12 @@ add(["behind", "خلف", "وراء"], { kind: "relation", id: "behind" });
 add(["in front of", "in front", "امام"], { kind: "relation", id: "front" });
 add(["left of", "left", "يسار"], { kind: "relation", id: "left" });
 add(["right of", "right", "يمين"], { kind: "relation", id: "right" });
+add(["inside", "into", "within", "داخل", "بداخل"], { kind: "relation", id: "inside" });
+add(["between", "بين"], { kind: "relation", id: "between" });
+add(
+  ["connected to", "connected", "attached to", "attached", "joined to", "joined", "متصل ب", "متصل", "موصول", "متصله"],
+  { kind: "relation", id: "connected" },
+);
 
 add(["light", "pale", "فاتح", "فاتحه"], { kind: "lightness", id: "light" });
 add(["dark", "deep", "غامق", "غامقه", "داكن", "داكنه"], { kind: "lightness", id: "dark" });
@@ -293,6 +306,55 @@ add(["fine", "ناعم", "ناعمه"], { kind: "modifier", id: "fine" });
 add(["cutaway", "cross section", "section", "open", "مقطع", "مقطوع", "مقطوعه", "مفتوح"], { kind: "modifier", id: "cutaway" });
 add(["closed", "مغلق", "مغلقه"], { kind: "modifier", id: "closed" });
 add(["arched", "مقوس", "مقوسه"], { kind: "modifier", id: "arched" });
+add(["polished", "mirror finish", "مصقول", "مصقوله", "لامع جدا"], { kind: "modifier", id: "polished" });
+add(["brushed", "brushed metal", "مخدوش", "مصقول بالفرشاه"], { kind: "modifier", id: "brushed" });
+add(["rusty", "rusted", "صدئ", "صدا", "متآكل"], { kind: "modifier", id: "rusty" });
+
+add(
+  ["kitchen", "مطبخ"],
+  system("kitchen"),
+);
+add(
+  ["bedroom", "bed room", "غرفه نوم", "غرفه النوم"],
+  system("bedroom"),
+);
+add(
+  ["living room", "sitting room", "lounge", "غرفه معيشه", "غرفه جلوس", "صالون"],
+  system("living"),
+);
+add(
+  ["bathroom", "حمام", "دوره مياه"],
+  system("bathroom"),
+);
+add(
+  ["garage", "كراج", "جراج", "مراب"],
+  system("garage"),
+);
+add(
+  ["library", "مكتبه عامه"],
+  system("library"),
+);
+add(
+  ["home office", "office", "غرفه مكتب", "مكتب عمل"],
+  system("office"),
+);
+add(
+  ["laboratory", "science lab", "lab", "مختبر", "معمل علوم"],
+  system("laboratory"),
+);
+add(
+  [
+    "plumbing system",
+    "plumbing",
+    "piping",
+    "pipe network",
+    "نظام مواسير",
+    "شبكه مواسير",
+    "سباكه",
+    "شبكه انابيب",
+  ],
+  system("plumbing"),
+);
 
 const SKIP = new Set([
   "a", "an", "the", "of", "with", "in", "from", "to", "for", "some", "my", "please",
@@ -321,12 +383,13 @@ const UNIT_SCALE = {
 const NUM_EN = {
   one: 1, single: 1, two: 2, pair: 2, couple: 2, three: 3, four: 4, five: 5,
   six: 6, seven: 7, eight: 8, nine: 9, ten: 10, dozen: 12, several: 4, few: 3, many: 6,
+  handful: 5, both: 2,
 };
 const NUM_AR = {
   واحد: 1, واحده: 1, اثنان: 2, اثنين: 2, اثنتان: 2, اثنتين: 2, زوج: 2,
   ثلاث: 3, ثلاثه: 3, اربع: 4, اربعه: 4, خمس: 5, خمسه: 5, ست: 6, سته: 6,
   سبع: 7, سبعه: 7, ثماني: 8, ثمانيه: 8, ثمان: 8, تسع: 9, تسعه: 9, عشر: 10, عشره: 10,
-  عده: 4, كثير: 6,
+  عده: 4, كثير: 6, بضعه: 3, بضع: 3,
 };
 
 export function normalize(input) {
@@ -471,6 +534,7 @@ function blankObject(it, text) {
     sx: 1,
     sy: 1,
     glow: false,
+    finish: null,
     lightness: 0,
     floors: null,
     on: null,
@@ -515,6 +579,98 @@ function nearestItem(items, from, pred) {
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
+}
+
+const ROOM_KITS = {
+  kitchen: [
+    { type: "cabinet", material: "wood" },
+    { type: "table", material: "wood" },
+    { type: "chair", count: 2, material: "wood" },
+    { type: "bottle", material: "glass" },
+    { type: "cup", material: "ceramic" },
+    { type: "lamp" },
+  ],
+  bedroom: [
+    { type: "bed" },
+    { type: "cabinet", material: "wood" },
+    { type: "lamp" },
+    { type: "shelf" },
+  ],
+  living: [
+    { type: "sofa" },
+    { type: "table", material: "wood" },
+    { type: "lamp" },
+    { type: "shelf" },
+    { type: "plant" },
+  ],
+  bathroom: [
+    { type: "tank" },
+    { type: "cabinet" },
+    { type: "lamp" },
+    { type: "bottle" },
+  ],
+  garage: [
+    { type: "car" },
+    { type: "cabinet" },
+    { type: "pump", material: "metal" },
+    { type: "pipe", material: "metal" },
+  ],
+  library: [
+    { type: "shelf" },
+    { type: "book", count: 3 },
+    { type: "table", material: "wood" },
+    { type: "chair" },
+    { type: "lamp" },
+  ],
+  office: [
+    { type: "table", material: "wood" },
+    { type: "chair" },
+    { type: "screen" },
+    { type: "lamp" },
+    { type: "shelf" },
+  ],
+  laboratory: [
+    { type: "table" },
+    { type: "microscope" },
+    { type: "beaker", material: "glass" },
+    { type: "atom" },
+    { type: "lamp" },
+  ],
+};
+
+function furnishRoom(objs, roomId, items, text) {
+  const kit = ROOM_KITS[roomId] || [];
+  const have = new Set(objs.map((o) => o.type));
+  const color = items.find((i) => i.kind === "color")?.hex || null;
+  let painted = objs.some((o) => o.color);
+  for (const item of kit) {
+    if (have.has(item.type)) continue;
+    const useColor = !painted && color && ["cabinet", "table", "bed", "sofa", "chair", "car"].includes(item.type);
+    if (useColor) painted = true;
+    objs.push({
+      type: item.type,
+      token: 900,
+      clause: 0,
+      count: item.count || 1,
+      explicitCount: !!item.count,
+      color: useColor ? color : null,
+      material: item.material || null,
+      scale: 1,
+      sx: 1,
+      sy: 1,
+      glow: false,
+      finish: null,
+      lightness: 0,
+      floors: null,
+      on: null,
+      anchor: null,
+      slot: null,
+      variant: null,
+      seed: hashString(`${text}:${roomId}:${item.type}`),
+    });
+    have.add(item.type);
+  }
+  return objs;
 }
 
 const LAYER_ORDER = ["sponge", "cloth", "cotton", "sand", "charcoal", "coarseSand", "gravel", "pebbles", "coarseGravel", "ceramic", "bioballs"];
@@ -603,6 +759,8 @@ function assemble(items, lang, text) {
   const hasFilter = objs.some((o) => o.type === "filter");
   const hasTank = objs.some((o) => o.type === "tank");
   const hasClass = systems.some((s) => s.id === "classroom");
+  const roomHit = systems.find((s) => ROOM_KITS[s.id]);
+  const hasPlumb = systems.some((s) => s.id === "plumbing");
 
   let mode = "scene";
   if (hasClass && !hasAqua && !hasFilt) mode = "classroom";
@@ -610,6 +768,8 @@ function assemble(items, lang, text) {
   else if (hasFilt && !hasAqua) mode = "filtration";
   else if (hasAqua && hasFilt) mode = items.find((i) => i.kind === "system").id === "aquaponics" ? "aquaponics" : "filtration";
   else if ((hasFilter && (hasTank || layers.length >= 2)) || layers.length >= 3) mode = "filtration";
+  else if (hasPlumb) mode = "plumbing";
+  else if (roomHit) mode = "room";
 
   const cutaway = !items.some((i) => i.kind === "modifier" && i.id === "closed");
   const used = new Set();
@@ -647,6 +807,9 @@ function assemble(items, lang, text) {
     } else if (mod.kind === "floors") {
       const o = bind(objs, mod, lang, (x) => ["building", "castle", "house"].includes(x.type), 8);
       if (o) o.floors = clamp(mod.value, 1, 60);
+    } else if (mod.kind === "modifier" && (mod.id === "polished" || mod.id === "brushed" || mod.id === "rusty")) {
+      const o = bind(objs, mod, lang);
+      if (o) o.finish = mod.id;
     } else if (mod.kind === "modifier" && mod.id === "cutaway") {
       const o = bind(objs, mod, lang, (x) => ["building", "house", "castle", "cylinder", "tank", "dome"].includes(x.type), 8);
       if (o) o.cutaway = true;
@@ -695,6 +858,7 @@ function assemble(items, lang, text) {
 
   for (const o of objs) {
     if ((o.color === "#c0c0c0" || o.color === "#d4af37") && !o.material) o.material = "metal";
+    if ((o.finish === "polished" || o.finish === "brushed") && !o.material) o.material = "metal";
     if (o.type === "building" && !o.floors) {
       o.floors =
         o.variant === "skyscraper" ? 22 : o.variant === "tower" ? 12 : o.variant === "school" ? 3 : o.variant === "factory" ? 2 : 8;
@@ -705,6 +869,20 @@ function assemble(items, lang, text) {
   if (mode === "classroom") {
     spec.mode = "classroom";
     spec.objects = objs;
+    return spec;
+  }
+
+  if (mode === "room" && roomHit) {
+    spec.mode = "room";
+    spec.room = { id: roomHit.id };
+    spec.objects = furnishRoom(objs, roomHit.id, items, text);
+    return spec;
+  }
+
+  if (mode === "plumbing") {
+    spec.mode = "plumbing";
+    spec.plumbing = { color: items.find((i) => i.kind === "color")?.hex || null };
+    spec.objects = objs.filter((o) => !["pipe", "pump", "tank"].includes(o.type));
     return spec;
   }
 
@@ -813,6 +991,15 @@ export function parsePrompt(text) {
       items.push({ kind: floorish ? "floors" : "number", value: whole, clause, i, len: 1 });
       i += floorish ? 2 : 1;
       continue;
+    }
+    if (tok.n === "half") {
+      let j = i + 1;
+      while (j < tokens.length && tokens[j] && !tokens[j].sep && SKIP.has(tokens[j].n)) j += 1;
+      if (tokens[j] && !tokens[j].sep && (tokens[j].n === "dozen" || stripPrefixes(tokens[j].n) === "دسته")) {
+        items.push({ kind: "number", value: 6, clause, i, len: j - i + 1 });
+        i = j + 1;
+        continue;
+      }
     }
     const wordNum = NUM_EN[tok.n] || NUM_AR[stripPrefixes(tok.n)];
     if (wordNum) {
