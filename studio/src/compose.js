@@ -1,5 +1,5 @@
 import { Box3, Group, Vector3 } from "three";
-import { buildAquaponics, buildFiltration, buildObject } from "./builders.js";
+import { buildAquaponics, buildFiltration, buildObject, resetEditIds } from "./builders.js";
 
 function metricsOf(group) {
   group.updateMatrixWorld(true);
@@ -25,6 +25,7 @@ function layoutObjects(list, ctx) {
         group = buildObject({ ...spec, type: "abstract", count: 1 }, ctx);
       }
       group.scale.set((spec.sx || 1) * (spec.scale || 1), (spec.sy || 1) * (spec.scale || 1), spec.scale || 1);
+      if (group.userData.edit) group.userData.baseScale = group.scale.clone();
       const metrics = metricsOf(group);
       return { spec, source, copy, group, ...metrics, placed: false };
     });
@@ -108,6 +109,7 @@ function center(root) {
 }
 
 export function buildSpec(spec, ctx) {
+  resetEditIds();
   const root = new Group();
   root.name = "MujassamModel";
   if (spec.mode === "filtration") root.add(buildFiltration(spec, ctx));

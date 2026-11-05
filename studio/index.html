@@ -15,6 +15,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#16181c" />
     <meta name="description" content="Mujassam 3D Studio — free bilingual text-to-3D. Describe a model in Arabic or English and download GLB, OBJ, or PNG." />
+    <meta name="mujassam-release" content="2026.11.05-quality" />
     <title>Mujassam 3D Studio · استوديو مجسّم</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M32 4 58 18v28L32 60 6 46V18Z' fill='%230f6e5c'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -45,6 +46,9 @@
             <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15.7 15.7 0 0 0-1.4-3.6A8 8 0 0 1 18.9 8ZM12 4a13.6 13.6 0 0 1 1.9 4h-3.8A13.6 13.6 0 0 1 12 4ZM4.3 14a8 8 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4Zm.8 2h3a15.7 15.7 0 0 0 1.4 3.6A8 8 0 0 1 5.1 16Zm3-8h-3a8 8 0 0 1 4.4-3.6A15.7 15.7 0 0 0 8.1 8ZM12 20a13.6 13.6 0 0 1-1.9-4h3.8A13.6 13.6 0 0 1 12 20Zm2.3-6H9.7a14.7 14.7 0 0 1 0-4h4.6a14.7 14.7 0 0 1 0 4Zm.3 5.6a15.7 15.7 0 0 0 1.4-3.6h3a8 8 0 0 1-4.4 3.6ZM16.3 14a16.5 16.5 0 0 0 0-4h3.4a8 8 0 0 1 0 4Z" fill="currentColor"/></svg>
             <span data-i18n="lang"></span>
           </button>
+          <button id="shortcutBtn" class="btn ghost keys-btn" type="button">
+            <span data-i18n="keys"></span>
+          </button>
           <button id="panelToggle" class="btn ghost panel-toggle" type="button" aria-expanded="true" aria-controls="studioPanel">
             <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="7" r="1.7" fill="currentColor"/><circle cx="15" cy="12" r="1.7" fill="currentColor"/><circle cx="10" cy="17" r="1.7" fill="currentColor"/></svg>
             <span id="panelToggleLabel"></span>
@@ -53,11 +57,13 @@
       </header>
 
       <main class="layout">
+        <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" tabindex="0"></div>
         <section class="stage" id="stage">
           <div id="viewport" class="viewport">
             <div class="stage-info">
               <span id="modelTitle" class="pill"></span>
               <span id="modelStats" class="pill subtle"></span>
+              <span id="complexity" class="pill complexity"></span>
             </div>
             <div id="emptyState" class="empty hidden">
               <div class="empty-card">
@@ -70,6 +76,29 @@
               <div class="spinner"></div>
               <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
               <span id="progressLabel"></span>
+            </div>
+            <div class="dock" role="toolbar">
+              <button class="tbtn emphasis" id="dockReset" type="button">
+                <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z" fill="currentColor"/></svg>
+                <span data-i18n="resetView"></span>
+              </button>
+              <div class="dock-export">
+                <button class="tbtn" id="dockExport" type="button" aria-expanded="false" aria-controls="exportMenu">
+                  <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v3h16v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span data-i18n="export"></span>
+                </button>
+                <div id="exportMenu" class="export-menu hidden">
+                  <button type="button" id="menuGLB" data-i18n="downloadGLB"></button>
+                  <button type="button" id="menuPNG" data-i18n="downloadPNG"></button>
+                  <button type="button" id="menuPNGHD" data-i18n="pngHd"></button>
+                  <button type="button" id="menuPNGAlpha" data-i18n="pngClear"></button>
+                  <button type="button" id="menuOBJ" data-i18n="downloadOBJ"></button>
+                </div>
+              </div>
+              <button class="tbtn" id="dockFull" type="button">
+                <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                <span data-i18n="fullscreen"></span>
+              </button>
             </div>
           </div>
           <div class="toolbar" role="toolbar">
@@ -118,6 +147,7 @@
             </div>
             <label for="prompt" class="card-title" data-i18n="promptLabel"></label>
             <textarea id="prompt" rows="6" dir="auto" autocomplete="off" data-i18n-ph="promptPlaceholder"></textarea>
+            <div id="suggestions" class="suggest" role="listbox" hidden></div>
             <div class="row">
               <button type="submit" class="btn primary grow" id="btnGenerate">
                 <svg viewBox="0 0 24 24" class="ic" aria-hidden="true"><path d="m12 2 2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4Z" fill="currentColor"/></svg>
@@ -128,6 +158,15 @@
                 <span data-i18n="clear"></span>
               </button>
             </div>
+            <div class="row minor-row">
+              <button type="button" class="btn secondary grow" id="btnImprove"><span data-i18n="improve"></span></button>
+              <button type="button" class="btn ghost" id="btnShare"><span data-i18n="share"></span></button>
+              <button type="button" class="btn ghost" id="btnFavorite"><span data-i18n="saveFavorite"></span></button>
+            </div>
+            <div class="history-wrap">
+              <span class="mini-title" data-i18n="recent"></span>
+              <div id="history" class="chips"></div>
+            </div>
             <div class="examples">
               <span class="mini-title" data-i18n="examples"></span>
               <div id="examples" class="example-grid"></div>
@@ -137,6 +176,12 @@
           <section class="card">
             <h2 class="card-title" data-i18n="understood"></h2>
             <div id="understood" class="understood"></div>
+          </section>
+
+          <section class="card" id="editCard">
+            <h2 class="card-title" data-i18n="editParts"></h2>
+            <p class="mini-title" data-i18n="editHint"></p>
+            <div id="partList" class="part-list"></div>
           </section>
 
           <section class="card">
@@ -160,6 +205,19 @@
               <input id="shadows" type="checkbox" checked />
               <span data-i18n="shadows"></span>
             </label>
+            <div class="field quality-field">
+              <span data-i18n="quality"></span>
+              <div class="quality-switch" id="qualitySwitch" role="group">
+                <button type="button" id="btnQualityHigh" data-i18n="qualityHigh"></button>
+                <button type="button" id="btnQualityFast" data-i18n="qualityFast"></button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2 class="card-title" data-i18n="favorites"></h2>
+            <p class="mini-title" data-i18n="favoritesHint"></p>
+            <div id="favorites" class="presets"></div>
           </section>
 
           <section class="card">
@@ -180,6 +238,13 @@
       </main>
       <div id="sheetScrim" class="sheet-scrim"></div>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <div id="shortcuts" class="modal hidden">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shortcutTitle">
+          <h2 id="shortcutTitle" data-i18n="shortcuts"></h2>
+          <ul id="shortcutList" class="shortcut-list"></ul>
+          <button type="button" id="closeShortcuts" class="btn" data-i18n="close"></button>
+        </div>
+      </div>
     </div>
     <script type="module" src="./src/main.js"></script>
   </body>

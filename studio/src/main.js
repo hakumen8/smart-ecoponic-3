@@ -1,7 +1,9 @@
 import { buildSpec } from "./compose.js";
+import { improvePrompt } from "./improve.js";
 import { EXAMPLES, FILTER_STACK, PRESETS, layerName, materialName, objectName, t } from "./i18n.js";
-import { parsePrompt } from "./parser.js";
-import { clearPrompt, loadState, saveState } from "./storage.js";
+import { parsePrompt, suggestPrompt } from "./parser.js";
+import { detectFastDevice, setQualityMode } from "./quality.js";
+import { clearPrompt, loadFavorites, loadState, rememberPrompt, removeFavorite, saveFavorite, saveState } from "./storage.js";
 import { Viewer, loadGltf } from "./viewer.js";
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +16,9 @@ let parsed = null;
 let fileTitle = "";
 let busy = false;
 let panelOpen = true;
+let quality = "high";
+let panelWidth = 332;
+let selectedPartId = null;
 
 function narrowScreen() {
   return window.matchMedia("(max-width: 1100px)").matches;
@@ -103,10 +108,9 @@ function applyStaticText() {
     .map((id) => `<option value="${id}">${escapeHtml(t(lang, `light${id[0].toUpperCase()}${id.slice(1)}`))}</option>`)
     .join("");
   light.value = current;
-  $("btnFullscreen").querySelector("span").textContent = t(
-    lang,
-    document.fullscreenElement || $("stage").classList.contains("pseudo-fs") ? "exitFullscreen" : "fullscreen",
-  );
+  const fullLabel = t(lang, document.fullscreenElement || $("stage").classList.contains("pseudo-fs") ? "exitFullscreen" : "fullscreen");
+  $("btnFullscreen").querySelector("span").textContent = fullLabel;
+  $("dockFull").querySelector("span").textContent = fullLabel;
   $("flowSwitch").setAttribute("aria-label", t(lang, "flowView"));
   $("btnFlowStatic").title = t(lang, "flowStaticTitle");
   $("btnFlowLive").title = t(lang, "flowLiveTitle");
@@ -120,18 +124,35 @@ function applyStaticText() {
 function renderExamples() {
   const host = $("examples");
   host.replaceChildren();
-  for (const example of EXAMPLES[lang]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "example-card";
-    button.dir = "auto";
-    button.title = example.text;
-    button.innerHTML = `<span class="et">${escapeHtml(example.title)}</span><span class="ed">${escapeHtml(example.text)}</span>`;
-    button.addEventListener("click", () => {
-      prompt.value = example.text;
-      generate(example.text, { preset: null });
-    });
-    host.appendChild(button);
+  const cats = ["water", "basics", "education", "engineering", "games", "furniture"];
+  const catKey = {
+    water: "catWater",
+    basics: "catBasics",
+    education: "catEducation",
+    engineering: "catEngineering",
+    games: "catGames",
+    furniture: "catFurniture",
+  };
+  for (const cat of cats) {
+    const items = EXAMPLES[lang].filter((example) => (example.cat || "basics") === cat);
+    if (!items.length) continue;
+    const label = document.createElement("div");
+    label.className = "example-cat";
+    label.textContent = t(lang, catKey[cat]);
+    host.appendChild(label);
+    for (const example of items) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "example-card";
+      button.dir = "auto";
+      button.title = example.text;
+      button.innerHTML = `<span class="et">${escapeHtml(example.title)}</span><span class="ed">${escapeHtml(example.text)}</span>`;
+      button.addEventListener("click", () => {
+        prompt.value = example.text;
+        generate(example.text, { preset: null });
+      });
+      host.appendChild(button);
+    }
   }
 }
 
@@ -199,10 +220,27 @@ function modelTitle() {
     .join(" + ");
 }
 
+function complexityOf(tris) {
+  if (tris < 12000) return "light";
+  if (tris < 40000) return "medium";
+  return "heavy";
+}
+
 function updateStats() {
   const stats = viewer.hasModel() ? viewer.stats() : null;
+  const partCount = viewer.hasModel() ? viewer.parts().length : 0;
   $("modelTitle").textContent = modelTitle();
-  $("modelStats").textContent = stats ? `${stats.meshes} ${t(lang, "objects")} · ${stats.tris.toLocaleString()} △` : "";
+  const badge = $("complexity");
+  if (!stats) {
+    $("modelStats").textContent = "";
+    badge.textContent = "";
+    badge.className = "pill complexity";
+    return;
+  }
+  const level = complexityOf(stats.tris);
+  $("modelStats").textContent = `${partCount} ${t(lang, "parts")} · ${stats.meshes} ${t(lang, "objects")} · ${stats.tris.toLocaleString()} ${t(lang, "triangles")}`;
+  badge.textContent = t(lang, level === "light" ? "complexityLight" : level === "medium" ? "complexityMedium" : "complexityHeavy");
+  badge.className = `pill complexity ${level}`;
 }
 
 function fileName(ext) {
@@ -229,6 +267,8 @@ function persist() {
     grid: $("btnGrid").classList.contains("on"),
     flowLive: $("btnFlowLive").classList.contains("on"),
     theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+    quality,
+    panelWidth,
   });
 }
 
@@ -275,9 +315,13 @@ async function generate(text, { preset = null, keepCamera = false } = {}) {
       viewer.controls.update();
     }
     parsed = spec;
+    selectedPartId = null;
+    rememberPrompt(value);
     $("emptyState").classList.add("hidden");
     renderUnderstood();
     renderPresets();
+    renderHistory();
+    renderParts();
     updateStats();
     if (spec.unknown) toast(t(lang, "unknown"), true);
     const url = new URL(location.href);
@@ -342,6 +386,266 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(link.href), 1500);
 }
 
+function colorInputValue(hex) {
+  return /^#[0-9a-fA-F]{6}$/.test(hex || "") ? hex : "#90a4ae";
+}
+
+function readPartColor(group) {
+  let found = "#90a4ae";
+  group.traverse((node) => {
+    if (found !== "#90a4ae") return;
+    if (node.isMesh && node.material?.color && !node.userData?.isLabel) found = `#${node.material.color.getHexString()}`;
+  });
+  return found;
+}
+
+function renderParts() {
+  const host = $("partList");
+  const parts = viewer.parts();
+  host.replaceChildren();
+  if (!parts.length) {
+    host.innerHTML = `<span class="empty-note">${escapeHtml(t(lang, "nothingYet"))}</span>`;
+    return;
+  }
+  for (const part of parts) {
+    const edit = part.userData.edit;
+    const row = document.createElement("div");
+    row.className = `part${edit.id === selectedPartId ? " selected" : ""}`;
+    row.dataset.id = edit.id;
+    const name = document.createElement("button");
+    name.type = "button";
+    name.className = "pname";
+    name.textContent = edit.label;
+    name.addEventListener("click", () => selectPart(part));
+    const size = document.createElement("input");
+    size.type = "range";
+    size.min = "0.4";
+    size.max = "2.4";
+    size.step = "0.05";
+    size.value = String(edit.factor || 1);
+    size.setAttribute("aria-label", t(lang, "editSize"));
+    size.addEventListener("input", () => {
+      viewer.setPartScale(part, Number(size.value));
+      updateStats();
+    });
+    const color = document.createElement("input");
+    color.type = "color";
+    color.value = colorInputValue(edit.color || readPartColor(part));
+    color.setAttribute("aria-label", t(lang, "editColor"));
+    color.addEventListener("input", () => viewer.setPartColor(part, color.value));
+    row.append(name, size, color);
+    host.appendChild(row);
+  }
+}
+
+function selectPart(part) {
+  selectedPartId = part?.userData?.edit?.id || null;
+  viewer.highlight(part || null);
+  document.querySelectorAll(".part").forEach((row) => row.classList.toggle("selected", row.dataset.id === selectedPartId));
+  document.querySelector(".part.selected")?.scrollIntoView({ block: "nearest" });
+}
+
+function renderSuggestions() {
+  const host = $("suggestions");
+  const hits = suggestPrompt(prompt.value, lang);
+  host.replaceChildren();
+  host.hidden = hits.length === 0;
+  for (const hit of hits) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = hit;
+    button.addEventListener("click", () => {
+      const value = prompt.value;
+      const typing = value.length > 0 && !/\s$/.test(value);
+      const next = typing ? value.replace(/\S+$/, hit) : `${value}${hit}`;
+      prompt.value = `${next} `;
+      prompt.focus();
+      renderSuggestions();
+    });
+    host.appendChild(button);
+  }
+}
+
+function renderHistory() {
+  const host = $("history");
+  const items = loadState().history || [];
+  host.replaceChildren();
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.length > 48 ? `${item.slice(0, 48)}…` : item;
+    button.title = item;
+    button.addEventListener("click", () => {
+      prompt.value = item;
+      generate(item, { preset: null });
+    });
+    host.appendChild(button);
+  }
+}
+
+function renderFavorites() {
+  const host = $("favorites");
+  const items = loadFavorites();
+  host.replaceChildren();
+  if (!items.length) {
+    host.innerHTML = `<span class="empty-note">${escapeHtml(t(lang, "noFavorites"))}</span>`;
+    return;
+  }
+  for (const item of items) {
+    const wrap = document.createElement("div");
+    wrap.className = "preset favorite-row";
+    wrap.innerHTML = `<span class="pn">${escapeHtml(item.title || item.prompt)}</span><span class="pd">${escapeHtml(item.prompt)}</span>`;
+    wrap.addEventListener("click", () => {
+      prompt.value = item.prompt;
+      generate(item.prompt, { preset: null });
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-fav";
+    remove.textContent = t(lang, "remove");
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeFavorite(item.id);
+      renderFavorites();
+    });
+    wrap.appendChild(remove);
+    host.appendChild(wrap);
+  }
+}
+
+function applyQuality(next, { regenerate = false, save = true } = {}) {
+  quality = next === "fast" ? "fast" : "high";
+  setQualityMode(quality);
+  viewer.setQuality(quality);
+  $("btnQualityHigh").classList.toggle("on", quality === "high");
+  $("btnQualityFast").classList.toggle("on", quality === "fast");
+  $("btnQualityHigh").setAttribute("aria-pressed", String(quality === "high"));
+  $("btnQualityFast").setAttribute("aria-pressed", String(quality === "fast"));
+  if (regenerate && prompt.value.trim() && !busy) generate(prompt.value, { preset: presetId, keepCamera: true });
+  else if (save) persist();
+}
+
+function placeResizer() {
+  const resizer = $("panelResizer");
+  const layout = document.querySelector(".layout");
+  const panel = $("studioPanel");
+  if (!resizer || narrowScreen() || !panelOpen) {
+    if (resizer) resizer.hidden = true;
+    return;
+  }
+  resizer.hidden = false;
+  const edge = document.documentElement.dir === "rtl" ? panel.getBoundingClientRect().right : panel.getBoundingClientRect().left;
+  resizer.style.left = `${edge - layout.getBoundingClientRect().left - 7}px`;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    return ok;
+  }
+}
+
+function shareUrl() {
+  const url = new URL(location.href);
+  const value = prompt.value.trim();
+  if (value) url.searchParams.set("q", value);
+  else url.searchParams.delete("q");
+  history.replaceState(null, "", url);
+  return url.toString();
+}
+
+async function shareLink() {
+  const text = shareUrl();
+  try {
+    if (navigator.share && narrowScreen()) {
+      await navigator.share({ title: t(lang, "appName"), url: text });
+      return;
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+  }
+  const ok = await copyText(text);
+  toast(t(lang, ok ? "copied" : "shareFail"), !ok);
+}
+
+function closeExportMenu() {
+  $("exportMenu").classList.add("hidden");
+  $("dockExport").setAttribute("aria-expanded", "false");
+}
+
+function exportPNG(options) {
+  if (!viewer.hasModel()) return toast(t(lang, "emptyBody"), true);
+  const link = document.createElement("a");
+  link.href = viewer.screenshot(options);
+  link.download = fileName("png");
+  link.click();
+  toast(t(lang, "exported"));
+}
+
+async function exportGLB() {
+  if (!viewer.hasModel()) return toast(t(lang, "emptyBody"), true);
+  try {
+    downloadBlob(await viewer.exportGLB(), fileName("glb"));
+    toast(t(lang, "exported"));
+  } catch (error) {
+    console.error(error);
+    toast(t(lang, "exportFail"), true);
+  }
+}
+
+function exportOBJ() {
+  if (!viewer.hasModel()) return toast(t(lang, "emptyBody"), true);
+  try {
+    downloadBlob(viewer.exportOBJ(), fileName("obj"));
+    toast(t(lang, "exported"));
+  } catch (error) {
+    console.error(error);
+    toast(t(lang, "exportFail"), true);
+  }
+}
+
+function showShortcuts(on) {
+  $("shortcuts").classList.toggle("hidden", !on);
+}
+
+function renderShortcutList() {
+  const rows = [
+    ["Ctrl + Enter", "generate"],
+    ["R", "resetView"],
+    ["F", "fullscreen"],
+    ["W", "wireframe"],
+    ["L", "labels"],
+    ["G", "grid"],
+    ["A", "autoRotate"],
+    ["1 / 2", "flowStatic"],
+    ["H", "showPanel"],
+    ["Q", "quality"],
+    ["S", "share"],
+    ["?", "shortcuts"],
+  ];
+  $("shortcutList").innerHTML = rows
+    .map(([key, id]) => `<li><span>${escapeHtml(t(lang, id))}</span><kbd>${escapeHtml(key)}</kbd></li>`)
+    .join("");
+}
+
+function clickToggle(id) {
+  const button = $(id);
+  button.click();
+}
+
 async function boot() {
   const saved = loadState();
   lang = saved.lang === "en" ? "en" : "ar";
@@ -352,6 +656,17 @@ async function boot() {
   renderExamples();
   renderPresets();
   renderUnderstood();
+  renderHistory();
+  renderFavorites();
+  renderParts();
+  renderShortcutList();
+  if (saved.panelWidth) {
+    panelWidth = Math.max(280, Math.min(560, Number(saved.panelWidth) || 332));
+    document.querySelector(".layout").style.setProperty("--panel-w", `${panelWidth}px`);
+  }
+  const initialQuality = saved.quality === "high" || saved.quality === "fast" ? saved.quality : detectFastDevice() ? "fast" : "high";
+  applyQuality(initialQuality, { save: false });
+  placeResizer();
 
   if (saved.light) {
     const bg = viewer.setLighting(saved.light);
@@ -393,11 +708,31 @@ async function boot() {
     event.preventDefault();
     if (!busy) generate(prompt.value, { preset: null });
   });
+  prompt.addEventListener("input", () => renderSuggestions());
   prompt.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       generate(prompt.value, { preset: null });
     }
+  });
+  $("btnImprove").addEventListener("click", () => {
+    if (busy) return;
+    const next = improvePrompt(prompt.value);
+    prompt.value = next;
+    renderSuggestions();
+    generate(next, { preset: null });
+  });
+  $("btnShare").addEventListener("click", () => shareLink());
+  $("btnFavorite").addEventListener("click", () => {
+    const value = prompt.value.trim();
+    if (!value) return toast(t(lang, "emptyBody"), true);
+    saveFavorite({
+      id: `${Date.now()}`,
+      title: (modelTitle() || value).slice(0, 48),
+      prompt: value,
+    });
+    renderFavorites();
+    toast(t(lang, "savedFavorite"));
   });
   $("btnClear").addEventListener("click", () => {
     prompt.value = "";
@@ -406,8 +741,11 @@ async function boot() {
     presetId = null;
     fileTitle = "";
     $("emptyState").classList.remove("hidden");
+    selectedPartId = null;
+    viewer.clearHighlight();
     renderUnderstood();
     renderPresets();
+    renderParts();
     updateStats();
     clearPrompt();
     const url = new URL(location.href);
@@ -420,7 +758,12 @@ async function boot() {
     renderExamples();
     renderPresets();
     renderUnderstood();
+    renderHistory();
+    renderFavorites();
+    renderShortcutList();
+    renderSuggestions();
     updateStats();
+    placeResizer();
     persist();
     if (!parsed && !fileTitle) return;
     if (presetId) {
@@ -435,6 +778,36 @@ async function boot() {
     if (prompt.value.trim()) generate(prompt.value, { preset: null, keepCamera: true });
   });
   $("btnReset").addEventListener("click", () => viewer.resetCamera());
+  $("dockReset").addEventListener("click", () => viewer.resetCamera());
+  $("dockFull").addEventListener("click", toggleFullscreen);
+  $("dockExport").addEventListener("click", () => {
+    const menu = $("exportMenu");
+    const open = menu.classList.toggle("hidden");
+    $("dockExport").setAttribute("aria-expanded", String(!open));
+  });
+  $("menuGLB").addEventListener("click", () => {
+    closeExportMenu();
+    exportGLB();
+  });
+  $("menuPNG").addEventListener("click", () => {
+    closeExportMenu();
+    exportPNG({ scale: 2 });
+  });
+  $("menuPNGHD").addEventListener("click", () => {
+    closeExportMenu();
+    exportPNG({ scale: 3 });
+  });
+  $("menuPNGAlpha").addEventListener("click", () => {
+    closeExportMenu();
+    exportPNG({ scale: 2, transparent: true });
+  });
+  $("menuOBJ").addEventListener("click", () => {
+    closeExportMenu();
+    exportOBJ();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!$("exportMenu").contains(event.target) && event.target !== $("dockExport") && !$("dockExport").contains(event.target)) closeExportMenu();
+  });
   $("btnFlowStatic").addEventListener("click", () => setFlowMode(false));
   $("btnFlowLive").addEventListener("click", () => setFlowMode(true));
   bindToggle("btnRotate", (on) => viewer.setAutoRotate(on));
@@ -446,34 +819,9 @@ async function boot() {
     applyStaticText();
     viewer.resize();
   });
-  $("btnGLB").addEventListener("click", async () => {
-    if (!viewer.hasModel()) return toast(t(lang, "emptyBody"), true);
-    try {
-      downloadBlob(await viewer.exportGLB(), fileName("glb"));
-      toast(t(lang, "exported"));
-    } catch (error) {
-      console.error(error);
-      toast(t(lang, "exportFail"), true);
-    }
-  });
-  $("btnPNG").addEventListener("click", () => {
-    if (!viewer.hasModel()) return toast(t(lang, "emptyBody"), true);
-    const link = document.createElement("a");
-    link.href = viewer.screenshot();
-    link.download = fileName("png");
-    link.click();
-    toast(t(lang, "exported"));
-  });
-  $("btnOBJ").addEventListener("click", () => {
-    if (!viewer.hasModel()) return toast(t(lang, "emptyBody"), true);
-    try {
-      downloadBlob(viewer.exportOBJ(), fileName("obj"));
-      toast(t(lang, "exported"));
-    } catch (error) {
-      console.error(error);
-      toast(t(lang, "exportFail"), true);
-    }
-  });
+  $("btnGLB").addEventListener("click", exportGLB);
+  $("btnPNG").addEventListener("click", () => exportPNG({ scale: 2 }));
+  $("btnOBJ").addEventListener("click", exportOBJ);
   $("fileInput").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -491,8 +839,10 @@ async function boot() {
         applyPanel();
       }
       $("emptyState").classList.add("hidden");
+      selectedPartId = null;
       renderUnderstood();
       renderPresets();
+      renderParts();
       updateStats();
       toast(t(lang, "loaded"));
     } catch (error) {
@@ -520,6 +870,8 @@ async function boot() {
     viewer.setShadows($("shadows").checked);
     persist();
   });
+  $("btnQualityHigh").addEventListener("click", () => applyQuality("high", { regenerate: true }));
+  $("btnQualityFast").addEventListener("click", () => applyQuality("fast", { regenerate: true }));
   $("themeBtn").addEventListener("click", () => {
     applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
     syncStatus();
@@ -528,7 +880,53 @@ async function boot() {
   $("panelToggle").addEventListener("click", () => {
     panelOpen = !panelOpen;
     applyPanel();
+    placeResizer();
     if (panelOpen && narrowScreen()) setTimeout(() => prompt.focus(), 250);
+  });
+  $("shortcutBtn").addEventListener("click", () => {
+    renderShortcutList();
+    showShortcuts(true);
+  });
+  $("closeShortcuts").addEventListener("click", () => showShortcuts(false));
+  $("shortcuts").addEventListener("click", (event) => {
+    if (event.target === $("shortcuts")) showShortcuts(false);
+  });
+  const resizer = $("panelResizer");
+  resizer.addEventListener("pointerdown", (event) => {
+    if (narrowScreen() || !panelOpen) return;
+    event.preventDefault();
+    resizer.setPointerCapture(event.pointerId);
+    const rtl = document.documentElement.dir === "rtl";
+    const startX = event.clientX;
+    const startW = $("studioPanel").getBoundingClientRect().width;
+    const move = (ev) => {
+      const dx = ev.clientX - startX;
+      panelWidth = Math.max(280, Math.min(560, startW + (rtl ? dx : -dx)));
+      document.querySelector(".layout").style.setProperty("--panel-w", `${panelWidth}px`);
+      placeResizer();
+      viewer.resize();
+    };
+    const up = () => {
+      resizer.removeEventListener("pointermove", move);
+      resizer.removeEventListener("pointerup", up);
+      persist();
+      viewer.resize();
+    };
+    resizer.addEventListener("pointermove", move);
+    resizer.addEventListener("pointerup", up);
+  });
+  const canvas = viewer.renderer.domElement;
+  let pointerDown = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    pointerDown = { x: event.clientX, y: event.clientY };
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (!pointerDown) return;
+    const dx = event.clientX - pointerDown.x;
+    const dy = event.clientY - pointerDown.y;
+    pointerDown = null;
+    if (dx * dx + dy * dy > 16) return;
+    selectPart(viewer.pick(event.clientX, event.clientY));
   });
   $("sheetScrim").addEventListener("click", () => {
     panelOpen = false;
@@ -541,18 +939,43 @@ async function boot() {
   window.matchMedia("(max-width: 1100px)").addEventListener("change", (event) => {
     panelOpen = !event.matches;
     applyPanel();
+    placeResizer();
     viewer.resize();
   });
+  window.addEventListener("resize", () => placeResizer());
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && panelOpen && narrowScreen()) {
-      if (event.target.matches("textarea, input, select")) event.target.blur();
-      panelOpen = false;
-      applyPanel();
+    if (event.key === "Escape") {
+      closeExportMenu();
+      if (!$("shortcuts").classList.contains("hidden")) {
+        showShortcuts(false);
+        return;
+      }
+      if (panelOpen && narrowScreen()) {
+        if (event.target.matches("textarea, input, select")) event.target.blur();
+        panelOpen = false;
+        applyPanel();
+      }
+      return;
+    }
+    if (event.key === "?" && !event.target.matches("textarea, input, select")) {
+      renderShortcutList();
+      showShortcuts($("shortcuts").classList.contains("hidden"));
       return;
     }
     if (event.target.matches("textarea, input, select")) return;
-    if (event.key === "r") viewer.resetCamera();
-    if (event.key === "f") toggleFullscreen();
+    if (narrowScreen()) return;
+    const key = event.key.toLowerCase();
+    if (key === "r") viewer.resetCamera();
+    else if (key === "f") toggleFullscreen();
+    else if (key === "w") clickToggle("btnWire");
+    else if (key === "l") clickToggle("btnLabels");
+    else if (key === "g") clickToggle("btnGrid");
+    else if (key === "a") clickToggle("btnRotate");
+    else if (key === "h") $("panelToggle").click();
+    else if (key === "q") applyQuality(quality === "high" ? "fast" : "high", { regenerate: true });
+    else if (key === "s") shareLink();
+    else if (event.key === "1") setFlowMode(false);
+    else if (event.key === "2") setFlowMode(true);
   });
 
   if (document.fonts?.ready) await document.fonts.ready;

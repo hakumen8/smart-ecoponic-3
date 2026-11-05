@@ -5,6 +5,7 @@ import {
   CapsuleGeometry,
   CatmullRomCurve3,
   CircleGeometry,
+  Color,
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
@@ -17,6 +18,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   PlaneGeometry,
+  Shape,
   SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
@@ -29,6 +31,7 @@ import { FILTER_STACK } from "./i18n.js";
 import { buildFilterColumn, addFlow, buildWasteBin } from "./filter-scene.js";
 import { glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, waterMaterial } from "./materials.js";
 import { rng } from "./parser.js";
+import { isFast, seg } from "./quality.js";
 
 const UP = new Vector3(0, 1, 0);
 
@@ -46,6 +49,23 @@ export function G(name, ...kids) {
   g.name = name;
   for (const k of kids.flat()) if (k) g.add(k);
   return g;
+}
+
+let editSerial = 1;
+
+export function resetEditIds() {
+  editSerial = 1;
+}
+
+export function tagEdit(group, { label, color } = {}) {
+  group.userData.edit = {
+    id: `part-${editSerial++}`,
+    label: label || group.name || "Part",
+    color: color || null,
+    factor: 1,
+  };
+  group.userData.baseScale = group.scale.clone();
+  return group;
 }
 
 export function spin(mesh, x = 0, y = 0, z = 0) {
@@ -204,7 +224,7 @@ function cube(spec) {
 }
 
 function sphere(spec) {
-  return G("Sphere", M(new SphereGeometry(0.55, 48, 32), paint(spec, "#ff6b6b"), 0, 0.55, 0));
+  return G("Sphere", M(new SphereGeometry(0.55, seg(48, 22), seg(32, 16)), paint(spec, "#ff6b6b"), 0, 0.55, 0));
 }
 
 function cylinder(spec) {
@@ -219,15 +239,15 @@ function cylinder(spec) {
       M(new TorusGeometry(0.44, 0.035, 8, 30), band, 0, 0.28, 0),
     );
   }
-  return G("Cylinder", M(new CylinderGeometry(0.42, 0.42, 1.15, 40), paint(spec, "#38bdf8"), 0, 0.58, 0));
+  return G("Cylinder", M(new CylinderGeometry(0.42, 0.42, 1.15, seg(40, 18)), paint(spec, "#38bdf8"), 0, 0.58, 0));
 }
 
 function cone(spec) {
-  return G("Cone", M(new ConeGeometry(0.55, 1.15, 40), paint(spec, "#fb923c"), 0, 0.58, 0));
+  return G("Cone", M(new ConeGeometry(0.55, 1.15, seg(40, 16)), paint(spec, "#fb923c"), 0, 0.58, 0));
 }
 
 function torus(spec) {
-  const mesh = M(new TorusGeometry(0.48, 0.16, 24, 64), paint(spec, "#a78bfa"));
+  const mesh = M(new TorusGeometry(0.48, 0.16, seg(24, 10), seg(64, 28)), paint(spec, "#a78bfa"));
   spin(mesh, Math.PI / 2, 0, 0);
   mesh.position.y = 0.2;
   return G("Torus", mesh);
@@ -287,12 +307,12 @@ function tank(spec) {
 
 export function buildVessel({ radius = 0.48, height = 1.15, water = "#4fc3f7", dirty = false, glass }) {
   const g = G("Tank");
-  const wall = M(new CylinderGeometry(radius, radius, height, 48, 1, true), glass || glassMaterial("#e7f8ff"), 0, height / 2 + 0.08, 0);
+  const wall = M(new CylinderGeometry(radius, radius, height, seg(48, 22), 1, true), glass || glassMaterial("#e7f8ff"), 0, height / 2 + 0.08, 0);
   wall.material.side = DoubleSide;
   const base = M(new CylinderGeometry(radius * 1.05, radius * 1.08, 0.08, 32), metalMaterial("#546e7a", 0.7, 0.4), 0, 0.04, 0);
   const waterH = height * (dirty ? 0.78 : 0.7);
   const liquid = M(
-    new CylinderGeometry(radius * 0.9, radius * 0.9, waterH, 36),
+    new CylinderGeometry(radius * 0.9, radius * 0.9, waterH, seg(36, 16)),
     waterMaterial(water, dirty),
     0,
     0.1 + waterH / 2,
@@ -774,7 +794,6 @@ function windmill(spec) {
     blades.rotation.z = t * 0.8;
   };
   g.add(blades);
-  void hub;
   return g;
 }
 
@@ -962,6 +981,159 @@ function book(spec) {
   return g;
 }
 
+function arch(spec) {
+  const mat = paint(spec, "#b0bec5", spec.material || "stone");
+  const g = G("Arch");
+  const ring = M(new TorusGeometry(0.55, 0.09, seg(12, 6), seg(28, 16), Math.PI), mat, 0, 0.72, 0);
+  spin(ring, 0, 0, Math.PI);
+  g.add(ring);
+  g.add(M(new BoxGeometry(0.16, 0.72, 0.18), mat, -0.55, 0.36, 0));
+  g.add(M(new BoxGeometry(0.16, 0.72, 0.18), mat, 0.55, 0.36, 0));
+  g.add(M(new BoxGeometry(0.16, 0.08, 0.18), mat, 0, 0.04, 0));
+  return g;
+}
+
+function windowObj(spec) {
+  const framed = spec.material === "glass" ? "wood" : spec.material || "wood";
+  const frame = paint({ ...spec, material: framed, color: spec.material === "glass" ? null : spec.color }, "#efe6d2", framed);
+  const glass = glassMaterial(spec.material === "glass" ? spec.color || "#d7f1ff" : "#d7f1ff");
+  const g = G("Window");
+  g.add(M(new BoxGeometry(0.78, 0.04, 0.08), frame, 0, 0.08, 0));
+  g.add(M(new BoxGeometry(0.78, 0.04, 0.08), frame, 0, 1.02, 0));
+  g.add(M(new BoxGeometry(0.06, 0.98, 0.08), frame, -0.36, 0.55, 0));
+  g.add(M(new BoxGeometry(0.06, 0.98, 0.08), frame, 0.36, 0.55, 0));
+  g.add(M(new BoxGeometry(0.04, 0.9, 0.05), frame, 0, 0.55, 0));
+  g.add(M(new BoxGeometry(0.62, 0.04, 0.05), frame, 0, 0.55, 0));
+  g.add(M(new BoxGeometry(0.28, 0.38, 0.03), glass, -0.16, 0.76, 0.02));
+  g.add(M(new BoxGeometry(0.28, 0.38, 0.03), glass, 0.16, 0.76, 0.02));
+  g.add(M(new BoxGeometry(0.28, 0.38, 0.03), glass, -0.16, 0.32, 0.02));
+  g.add(M(new BoxGeometry(0.28, 0.38, 0.03), glass, 0.16, 0.32, 0.02));
+  if (spec.variant === "arched") {
+    const cap = M(new TorusGeometry(0.36, 0.035, seg(8, 5), seg(18, 12), Math.PI), frame, 0, 1.02, 0);
+    spin(cap, Math.PI / 2, 0, 0);
+    g.add(cap);
+  }
+  return g;
+}
+
+function door(spec) {
+  const wood = paint(spec, "#6b4226", spec.material || "wood");
+  const g = G("Door");
+  g.add(M(new BoxGeometry(0.7, 1.28, 0.06), paint({}, "#4e342e", "wood"), 0, 0.66, -0.02));
+  const slab = M(new BoxGeometry(0.56, 1.12, 0.05), wood, 0, 0.62, 0.02);
+  g.add(slab);
+  g.add(M(new BoxGeometry(0.42, 0.42, 0.02), paint({}, "#5d4037", "wood"), 0, 0.42, 0.05));
+  g.add(M(new BoxGeometry(0.22, 0.28, 0.02), glassMaterial("#d7ecff"), 0, 0.92, 0.05));
+  g.add(M(new SphereGeometry(0.03, seg(12, 8), seg(10, 6)), metalMaterial("#d4af37", 1, 0.25), 0.18, 0.58, 0.06));
+  if (spec.variant === "arched") {
+    const cap = M(new SphereGeometry(0.28, seg(20, 12), seg(12, 8), 0, Math.PI * 2, 0, Math.PI / 2), wood, 0, 1.16, 0.02);
+    g.add(cap);
+  }
+  return g;
+}
+
+function dome(spec) {
+  const mat = paint(spec, "#eceff1", spec.material || "stone");
+  const g = G("Dome");
+  g.add(M(new CylinderGeometry(0.62, 0.68, 0.36, seg(28, 14)), mat, 0, 0.18, 0));
+  g.add(M(new SphereGeometry(0.58, seg(32, 16), seg(18, 10), 0, Math.PI * 2, 0, Math.PI / 2), mat, 0, 0.34, 0));
+  g.add(M(new SphereGeometry(0.08, seg(12, 8), seg(10, 6)), paint(spec, "#d4af37", "metal"), 0, 0.92, 0));
+  return g;
+}
+
+function wall(spec) {
+  const mat = paint(spec, "#d7ccc8", spec.material || "stone");
+  const g = G("Wall");
+  g.add(M(new BoxGeometry(1.7, 1.15, 0.16), mat, 0, 0.58, 0));
+  g.add(M(new BoxGeometry(0.16, 1.15, 0.2), mat, -0.85, 0.58, 0));
+  g.add(M(new BoxGeometry(0.16, 1.15, 0.2), mat, 0.85, 0.58, 0));
+  g.add(M(new BoxGeometry(0.36, 0.4, 0.04), glassMaterial("#d7ecff"), 0.28, 0.7, 0.09));
+  if (spec.variant === "arched") {
+    const ring = M(new TorusGeometry(0.22, 0.04, 6, 14, Math.PI), mat, 0.28, 0.9, 0.1);
+    spin(ring, Math.PI / 2, 0, 0);
+    g.add(ring);
+  }
+  return g;
+}
+
+function prism(spec) {
+  const mesh = M(new CylinderGeometry(0.42, 0.42, 0.9, 3), paint(spec, "#7e57c2"));
+  mesh.rotation.y = Math.PI / 6;
+  mesh.position.y = 0.45;
+  return G("Prism", mesh);
+}
+
+function shelf(spec) {
+  const wood = paint(spec, "#a97142", spec.material || "wood");
+  const g = G("Shelf");
+  g.add(M(new BoxGeometry(0.08, 1.2, 0.32), wood, -0.42, 0.6, 0));
+  g.add(M(new BoxGeometry(0.08, 1.2, 0.32), wood, 0.42, 0.6, 0));
+  g.add(M(new BoxGeometry(0.08, 1.2, 0.32), wood, 0, 0.6, -0.12));
+  for (let i = 0; i < 4; i++) g.add(M(new BoxGeometry(0.84, 0.04, 0.3), wood, 0, 0.12 + i * 0.32, 0));
+  const covers = ["#5c6bc0", "#e53935", "#00897b", "#f9a825", "#6d4c41"];
+  covers.forEach((color, i) => {
+    g.add(M(new BoxGeometry(0.07, 0.22, 0.18), paint({}, color), -0.28 + i * 0.09, 0.28, 0.02));
+  });
+  return g;
+}
+
+function cabinet(spec) {
+  const wood = paint(spec, "#8d6e63", spec.material || "wood");
+  const g = G("Cabinet");
+  g.add(M(new RoundedBoxGeometry(0.95, 1.25, 0.48, 2, 0.03), wood, 0, 0.66, 0));
+  g.add(M(new BoxGeometry(0.4, 1.02, 0.02), paint({}, "#6d4c41", "wood"), -0.21, 0.7, 0.25));
+  g.add(M(new BoxGeometry(0.4, 1.02, 0.02), paint({}, "#6d4c41", "wood"), 0.21, 0.7, 0.25));
+  const knob = metalMaterial("#d4af37", 1, 0.25);
+  g.add(M(new SphereGeometry(0.025, 8, 8), knob, -0.04, 0.7, 0.27));
+  g.add(M(new SphereGeometry(0.025, 8, 8), knob, 0.04, 0.7, 0.27));
+  g.add(M(new BoxGeometry(0.9, 0.06, 0.5), paint({}, "#5d4037", "wood"), 0, 0.06, 0));
+  return g;
+}
+
+function chessboard(spec) {
+  const g = G("Chessboard");
+  g.add(M(new BoxGeometry(1.12, 0.06, 1.12), paint({}, "#5d4037", "wood"), 0, 0.04, 0));
+  const light = new MeshStandardMaterial({ color: "#ffffff", roughness: 0.7 });
+  const squares = isFast() ? 1 : 64;
+  if (isFast()) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext("2d");
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        ctx.fillStyle = (r + c) % 2 ? "#3e2723" : "#f5f0e6";
+        ctx.fillRect(c * 32, r * 32, 32, 32);
+      }
+    }
+    const tex = new CanvasTexture(canvas);
+    tex.colorSpace = SRGBColorSpace;
+    g.add(M(new BoxGeometry(0.96, 0.02, 0.96), new MeshStandardMaterial({ map: tex, roughness: 0.7 }), 0, 0.08, 0));
+    return g;
+  }
+  const geo = new BoxGeometry(0.11, 0.02, 0.11);
+  const mesh = new InstancedMesh(geo, light, squares);
+  const dummy = new Object3D();
+  const color = new Color();
+  let n = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      dummy.position.set(-0.385 + c * 0.11, 0.08, -0.385 + r * 0.11);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(n, dummy.matrix);
+      color.set((r + c) % 2 ? "#3e2723" : spec.color || "#f5f0e6");
+      mesh.setColorAt(n, color);
+      n += 1;
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+  return g;
+}
+
 function abstract(spec) {
   const rand = rng(spec.seed || 1);
   const g = G("Abstract");
@@ -1005,6 +1177,7 @@ export function buildFiltration(spec, ctx) {
         labelX: -width / 2 - 1.28,
       });
       column.position.x = node.x;
+      tagEdit(column, { label: tr("filterColumn"), color: "#e7f6ff" });
       g.add(column);
       node.ref = column;
     } else {
@@ -1017,8 +1190,9 @@ export function buildFiltration(spec, ctx) {
         dirty,
       });
       vessel.position.x = node.x;
-      g.add(vessel);
       const key = node.role === "dirty" ? "dirtyTank" : node.role === "clean" ? "cleanTank" : node.role === "settle" ? "settleTank" : "storageTank";
+      tagEdit(vessel, { label: tr(key), color: dirty ? "#8d6e63" : "#4fc3f7" });
+      g.add(vessel);
       const tag = label(tr(key), { rtl: lang === "ar", accent: dirty ? "#d7ccc8" : "#81d4fa", width: clean ? 1.05 : 0.92 });
       tag.position.set(node.x, (vessel.userData.top || 1.3) + 0.28, 0.55);
       g.add(tag);
@@ -1057,6 +1231,7 @@ export function buildFiltration(spec, ctx) {
   const pumpX = prev ? (prev.x + fx) * 0.5 : fx - 0.95;
   pumpMesh.position.set(pumpX, 0, 0.82);
   pumpMesh.scale.setScalar(0.9);
+  tagEdit(pumpMesh, { label: tr("pump"), color: "#1e88e5" });
   g.add(pumpMesh);
   const pumpTag = label(tr("pump"), { rtl: lang === "ar", width: 0.72 });
   pumpTag.position.set(pumpX, 0.98, 0.82);
@@ -1088,19 +1263,24 @@ export function buildFiltration(spec, ctx) {
 
   const fallMid = fallTop.clone().lerp(fallBottom, 0.5);
   fallMid.x += 0.012;
-  addFlow(g, [fallTop, fallMid, fallBottom], 9, {
-    color: "#d06a28",
+  addFlow(g, [fallTop, fallMid, fallBottom], isFast() ? 7 : 14, {
+    color: "#ff8a3d",
     colorTo: "#7ee7ff",
     tube: false,
-    speed: 0.095,
-    radius: 0.062,
-    arrows: 5,
-    arrowColor: "#cfd8dc",
-    arrowLength: 0.1,
+    stream: true,
+    streamRadius: 0.07,
+    dirty: true,
+    speed: 0.22,
+    radius: 0.085,
+    arrows: isFast() ? 3 : 5,
+    arrowColor: "#e7f6ff",
+    arrowLength: 0.12,
+    wobble: 0.02,
   });
 
   const bin = buildWasteBin();
   bin.position.set(fx + ud.wasteBin.x, 0, ud.wasteBin.z);
+  tagEdit(bin, { label: tr("wasteBin"), color: "#6d4c41" });
   g.add(bin);
   const wasteTag = label(tr("wasteBin"), { rtl: lang === "ar", accent: "#bcaaa4", width: 1.02 });
   wasteTag.position.set(bin.position.x, bin.userData.top + 0.34, bin.position.z);
@@ -1117,7 +1297,7 @@ export function buildFiltration(spec, ctx) {
       wasteEnd,
     ],
     5,
-    { color: "#c4622d", speed: 0.17, radius: 0.05, tubeRadius: 0.03, arrowColor: "#e09a6a" },
+    { color: "#c4622d", speed: 0.2, radius: 0.048, tubeRadius: 0.03, arrowColor: "#e09a6a", stream: true, streamRadius: 0.02, dirty: true, wobble: 0.008 },
   );
   const swirl = new Vector3(bin.position.x, 0.2, bin.position.z);
   addFlow(
@@ -1161,6 +1341,7 @@ export function buildAquaponics(spec, ctx) {
   const tankMesh = buildVessel({ radius: 0.7, height: 0.85, water: "#4fc3f7", dirty: false });
   tankMesh.scale.set(1.15, 0.85, 1);
   tankMesh.position.set(-0.85, 0, 0);
+  tagEdit(tankMesh, { label: tr("fishTank"), color: "#4fc3f7" });
   g.add(tankMesh);
   const fishCount = spec.aquaponics.fish || 3;
   for (let i = 0; i < fishCount; i++) {
@@ -1180,6 +1361,7 @@ export function buildAquaponics(spec, ctx) {
 
   const bed = planter({ color: "#43a047" });
   bed.position.set(0.95, 0.85, 0);
+  tagEdit(bed, { label: tr("growBed"), color: "#43a047" });
   g.add(bed);
   g.add(M(new BoxGeometry(0.08, 0.85, 0.08), paint({}, "#6d4c41", "wood"), 0.6, 0.42, 0.2));
   g.add(M(new BoxGeometry(0.08, 0.85, 0.08), paint({}, "#6d4c41", "wood"), 1.3, 0.42, 0.2));
@@ -1200,11 +1382,13 @@ export function buildAquaponics(spec, ctx) {
     });
     column.scale.setScalar(0.75);
     column.position.set(0.15, 0, 0.85);
+    tagEdit(column, { label: tr("filterColumn"), color: "#e7f6ff" });
     g.add(column);
   }
   const pumpMesh = pump({ material: "metal", color: "#1e88e5" });
   pumpMesh.position.set(-0.1, 0, -0.85);
   pumpMesh.scale.setScalar(0.8);
+  tagEdit(pumpMesh, { label: tr("pump"), color: "#1e88e5" });
   g.add(pumpMesh);
   addFlow(
     g,
@@ -1282,6 +1466,15 @@ const BUILDERS = {
   crown,
   umbrella,
   book,
+  arch,
+  window: windowObj,
+  door,
+  dome,
+  wall,
+  prism,
+  shelf,
+  cabinet,
+  chessboard,
   abstract,
 };
 
@@ -1289,5 +1482,7 @@ export function buildObject(spec, ctx = {}) {
   const fn = BUILDERS[spec.type] || abstract;
   const group = fn(spec, ctx);
   group.userData.kind = spec.type;
+  const label = ctx.partLabel ? ctx.partLabel(spec.type) : group.name || spec.type;
+  tagEdit(group, { label, color: spec.color || null });
   return group;
 }

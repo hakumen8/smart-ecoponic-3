@@ -1,6 +1,9 @@
 import {
   ACESFilmicToneMapping,
+  BackSide,
   Box3,
+  CanvasTexture,
+  CircleGeometry,
   Clock,
   Color,
   DirectionalLight,
@@ -9,15 +12,18 @@ import {
   Group,
   HemisphereLight,
   Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
   MOUSE,
   PCFSoftShadowMap,
   PerspectiveCamera,
   PMREMGenerator,
+  Raycaster,
   Scene,
-  ShadowMaterial,
-  CircleGeometry,
+  SphereGeometry,
   SRGBColorSpace,
   TOUCH,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from "three";
@@ -32,49 +38,65 @@ const LIGHTS = {
     bg: "#0b1020",
     hemiSky: "#d7e6ff",
     hemiGround: "#1a2033",
-    hemi: 0.55,
+    hemi: 0.62,
     key: "#ffffff",
-    keyI: 3.1,
+    keyI: 3.4,
     fill: "#8eb6ff",
-    fillI: 0.7,
+    fillI: 0.85,
     rim: "#c4b5fd",
-    rimI: 0.85,
+    rimI: 1,
+    skyTop: "#35558a",
+    skyMid: "#1a2744",
+    floor: "#1a2333",
+    pad: "#243044",
   },
   day: {
     bg: "#c5d7ef",
     hemiSky: "#fff7ea",
     hemiGround: "#8aa0b8",
-    hemi: 0.75,
+    hemi: 0.85,
     key: "#fff1d0",
-    keyI: 3.6,
+    keyI: 3.8,
     fill: "#c5d8ff",
-    fillI: 0.9,
+    fillI: 1,
     rim: "#ffe0b2",
-    rimI: 0.45,
+    rimI: 0.55,
+    skyTop: "#7eb6ff",
+    skyMid: "#d5e6f8",
+    floor: "#c9d5bf",
+    pad: "#e4ecda",
   },
   sunset: {
     bg: "#2a1630",
     hemiSky: "#ffb07a",
     hemiGround: "#241428",
-    hemi: 0.45,
+    hemi: 0.5,
     key: "#ff9a62",
-    keyI: 2.6,
+    keyI: 2.8,
     fill: "#7e57c2",
-    fillI: 0.55,
+    fillI: 0.7,
     rim: "#ff7043",
-    rimI: 1.15,
+    rimI: 1.25,
+    skyTop: "#ff8f62",
+    skyMid: "#3a2040",
+    floor: "#2c1d2c",
+    pad: "#3d2a38",
   },
   night: {
     bg: "#070b16",
     hemiSky: "#9ec9ff",
     hemiGround: "#10131c",
-    hemi: 0.25,
+    hemi: 0.32,
     key: "#d6e4ff",
-    keyI: 1.15,
+    keyI: 1.35,
     fill: "#3949ab",
-    fillI: 0.35,
+    fillI: 0.45,
     rim: "#5ad1ff",
-    rimI: 0.7,
+    rimI: 0.85,
+    skyTop: "#10203c",
+    skyMid: "#070b16",
+    floor: "#0d121c",
+    pad: "#161d2b",
   },
 };
 
@@ -92,18 +114,19 @@ export class Viewer {
   constructor(container) {
     this.container = container;
     this.scene = new Scene();
-    this.camera = new PerspectiveCamera(42, 1, 0.08, 80);
+    this.camera = new PerspectiveCamera(42, 1, 0.08, 180);
     this.camera.position.set(4.4, 2.5, 6.4);
     this.renderer = new WebGLRenderer({
       antialias: true,
-      alpha: false,
+      alpha: true,
       preserveDrawingBuffer: true,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.pixelCap = 2;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.pixelCap));
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.12;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
     this.renderer.domElement.style.touchAction = "none";
@@ -130,8 +153,9 @@ export class Viewer {
     this.key.position.set(5, 9, 4);
     this.key.castShadow = true;
     this.key.shadow.mapSize.set(2048, 2048);
-    this.key.shadow.bias = -0.0004;
-    this.key.shadow.normalBias = 0.02;
+    this.key.shadow.bias = -0.00025;
+    this.key.shadow.normalBias = 0.028;
+    this.key.shadow.radius = 2.5;
     const shadow = this.key.shadow.camera;
     shadow.near = 0.4;
     shadow.far = 40;
@@ -145,13 +169,35 @@ export class Viewer {
     this.rim.position.set(-2, 4, -6);
     this.scene.add(this.hemi, this.key, this.key.target, this.fill, this.rim);
 
-    this.ground = new Mesh(new CircleGeometry(24, 64), new ShadowMaterial({ opacity: 0.38 }));
+    this.ground = new Mesh(
+      new CircleGeometry(22, 64),
+      new MeshStandardMaterial({ color: "#151b27", roughness: 0.96, metalness: 0.02 }),
+    );
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true;
-    this.ground.position.y = 0;
+    this.ground.position.y = -0.012;
+    this.pad = new Mesh(
+      new CircleGeometry(3.4, 48),
+      new MeshStandardMaterial({ color: "#1d2636", roughness: 0.88, metalness: 0.04 }),
+    );
+    this.pad.rotation.x = -Math.PI / 2;
+    this.pad.receiveShadow = true;
+    this.pad.position.y = -0.004;
+    this.skyCanvas = document.createElement("canvas");
+    this.skyCanvas.width = 8;
+    this.skyCanvas.height = 256;
+    this.skyTex = new CanvasTexture(this.skyCanvas);
+    this.skyTex.colorSpace = SRGBColorSpace;
+    this.sky = new Mesh(
+      new SphereGeometry(90, 28, 18),
+      new MeshBasicMaterial({ map: this.skyTex, side: BackSide, depthWrite: false, fog: false }),
+    );
     this.grid = new GridHelper(20, 20, 0x5ad1ff, 0x243049);
     this.grid.position.y = 0.001;
-    this.scene.add(this.ground, this.grid);
+    this.scene.add(this.sky, this.ground, this.pad, this.grid);
+    this.raycaster = new Raycaster();
+    this.pointer = new Vector2();
+    this.highlighted = null;
 
     this.model = new Group();
     this.scene.add(this.model);
@@ -187,11 +233,23 @@ export class Viewer {
     this.renderer.setSize(clientWidth, clientHeight, false);
   }
 
+  paintSky(top, mid, bottom) {
+    const ctx = this.skyCanvas.getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, top);
+    grad.addColorStop(0.42, mid);
+    grad.addColorStop(1, bottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 8, 256);
+    this.skyTex.needsUpdate = true;
+  }
+
   setBackground(hex, fromPreset = false) {
     if (!fromPreset) this.autoBg = false;
     this.bg = hex;
     this.scene.background = new Color(hex);
-    this.scene.fog = new Fog(hex, 16, 42);
+    this.scene.fog = new Fog(hex, 24, 68);
+    if (!fromPreset) this.paintSky(hex, hex, hex);
   }
 
   setLighting(name) {
@@ -208,8 +266,26 @@ export class Viewer {
     this.baseKey = preset.keyI;
     this.key.intensity = preset.keyI * this.intensity;
     this.autoBg = true;
+    this.paintSky(preset.skyTop || preset.bg, preset.skyMid || preset.bg, preset.bg);
+    if (this.ground) this.ground.material.color.set(preset.floor || preset.bg);
+    if (this.pad) this.pad.material.color.set(preset.pad || preset.floor || preset.bg);
     this.setBackground(preset.bg, true);
     return preset.bg;
+  }
+
+  setQuality(mode) {
+    const fast = mode === "fast";
+    this.quality = fast ? "fast" : "high";
+    this.pixelCap = fast ? 1.25 : 2;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.pixelCap));
+    const size = fast ? 1024 : 2048;
+    if (this.key.shadow.map) {
+      this.key.shadow.map.dispose();
+      this.key.shadow.map = null;
+    }
+    this.key.shadow.mapSize.set(size, size);
+    this.key.shadow.radius = fast ? 1 : 3;
+    this.resize();
   }
 
   setIntensity(value) {
@@ -221,7 +297,6 @@ export class Viewer {
     this.shadowsOn = on;
     this.renderer.shadowMap.enabled = on;
     this.key.castShadow = on;
-    this.ground.visible = on;
   }
 
   setGrid(on) {
@@ -259,6 +334,7 @@ export class Viewer {
   }
 
   clear() {
+    this.highlighted = null;
     for (const child of [...this.model.children]) {
       this.model.remove(child);
       disposeObject(child);
@@ -290,6 +366,7 @@ export class Viewer {
     this.homePos.copy(pos);
     this.homeTarget.copy(target);
     const span = Math.max(8, maxDim * 2);
+    if (this.pad) this.pad.scale.setScalar(Math.max(1, Math.max(size.x, size.z) / 2.4));
     const cam = this.key.shadow.camera;
     cam.left = -span;
     cam.right = span;
@@ -355,15 +432,117 @@ export class Viewer {
     return { meshes, tris: Math.round(tris) };
   }
 
-  screenshot() {
+  screenshot({ scale = 2, transparent = false } = {}) {
     const ratio = this.renderer.getPixelRatio();
-    this.renderer.setPixelRatio(Math.min(2.5, (window.devicePixelRatio || 1) * 1.5));
+    const prev = {
+      background: this.scene.background,
+      fog: this.scene.fog,
+      grid: this.grid.visible,
+      ground: this.ground.visible,
+      pad: this.pad.visible,
+      sky: this.sky.visible,
+    };
+    if (transparent) {
+      this.scene.background = null;
+      this.scene.fog = null;
+      this.grid.visible = false;
+      this.ground.visible = false;
+      this.pad.visible = false;
+      this.sky.visible = false;
+      this.renderer.setClearColor(0x000000, 0);
+    }
+    const edge = Math.max(this.container.clientWidth || 1, this.container.clientHeight || 1);
+    const pixelRatio = Math.min(scale, 4096 / edge);
+    this.renderer.setPixelRatio(Math.max(1, pixelRatio));
     this.resize();
     this.renderer.render(this.scene, this.camera);
     const url = this.renderer.domElement.toDataURL("image/png");
+    this.scene.background = prev.background;
+    this.scene.fog = prev.fog;
+    this.grid.visible = prev.grid;
+    this.ground.visible = prev.ground;
+    this.pad.visible = prev.pad;
+    this.sky.visible = prev.sky;
+    this.renderer.setClearColor(0x000000, 1);
     this.renderer.setPixelRatio(ratio);
     this.resize();
     return url;
+  }
+
+  parts() {
+    const list = [];
+    this.model.traverse((node) => {
+      if (node.userData?.edit) list.push(node);
+    });
+    return list;
+  }
+
+  pick(clientX, clientY) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const hits = this.raycaster.intersectObject(this.model, true);
+    for (const hit of hits) {
+      let node = hit.object;
+      while (node && node !== this.model) {
+        if (node.userData?.edit) return node;
+        node = node.parent;
+      }
+    }
+    return null;
+  }
+
+  clearHighlight() {
+    if (!this.highlighted) return;
+    this.highlighted.traverse((node) => {
+      if (!node.isMesh) return;
+      [].concat(node.material || []).forEach((mat) => {
+        if (!mat?.emissive || !mat.userData?.picked) return;
+        mat.emissive.copy(mat.userData.pickEm);
+        mat.emissiveIntensity = mat.userData.pickEi;
+        mat.userData.picked = false;
+      });
+    });
+    this.highlighted = null;
+  }
+
+  highlight(group) {
+    this.clearHighlight();
+    if (!group) return;
+    this.highlighted = group;
+    group.traverse((node) => {
+      if (!node.isMesh || node.userData?.isLabel || node.userData?.flowBead) return;
+      [].concat(node.material || []).forEach((mat) => {
+        if (!mat?.emissive) return;
+        mat.userData.pickEm = mat.emissive.clone();
+        mat.userData.pickEi = mat.emissiveIntensity || 0;
+        mat.userData.picked = true;
+        mat.emissive.set("#0f6e5c");
+        mat.emissiveIntensity = Math.max(0.22, mat.userData.pickEi);
+      });
+    });
+  }
+
+  setPartColor(group, hex) {
+    const color = new Color(hex);
+    group.traverse((node) => {
+      if (!node.isMesh || node.userData?.isLabel || node.userData?.flowBead || node.userData?.isFlowArrow || node.userData?.flowStream) return;
+      [].concat(node.material || []).forEach((mat) => {
+        if (!mat?.color || mat.userData?.locked) return;
+        mat.color.copy(color);
+      });
+    });
+    if (group.userData.edit) group.userData.edit.color = hex;
+  }
+
+  setPartScale(group, factor) {
+    const base = group.userData.baseScale || group.scale.clone();
+    group.userData.baseScale = base;
+    const next = Math.max(0.4, Math.min(2.4, Number(factor) || 1));
+    group.scale.set(base.x * next, base.y * next, base.z * next);
+    if (group.userData.edit) group.userData.edit.factor = next;
   }
 
   async exportGLB() {

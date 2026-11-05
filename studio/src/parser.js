@@ -87,6 +87,12 @@ const OBJECTS = [
   [["cylinder", "column", "pillar", "can", "اسطوانه", "اسطوانات", "عمود", "علبه"], "cylinder"],
   [["barrel", "برميل"], "cylinder", { variant: "barrel" }],
   [["cone", "مخروط", "قمع"], "cone"],
+  [["arch", "archway", "قوس", "عقد", { t: "اقواس", plural: true }, { t: "عقود", plural: true }], "arch"],
+  [["window", "windows", "نافذه", "شباك", { t: "نوافذ", plural: true }, { t: "شبابيك", plural: true }], "window"],
+  [["door", "doors", "doorway", "باب", { t: "ابواب", plural: true }], "door"],
+  [["dome", "قبه", { t: "قباب", plural: true }], "dome"],
+  [["wall", "walls", "جدار", "حائط", { t: "جدران", plural: true }], "wall"],
+  [["prism", "wedge", "موشور"], "prism"],
   [["torus", "ring", "donut", "doughnut", "حلقه", "خاتم", "دونات", "طوق"], "torus"],
   [["pyramid", "هرم", "اهرام", "اهرامات"], "pyramid"],
   [["capsule", "pill", "كبسوله"], "capsule"],
@@ -147,6 +153,10 @@ const OBJECTS = [
   [["crown", "تاج"], "crown"],
   [["umbrella", "مظله"], "umbrella"],
   [["book", "كتاب", "كتب"], "book"],
+  [["shelf", "bookshelf", "bookcase", "رف", { t: "رفوف", plural: true }, "مكتبه"], "shelf"],
+  [["cabinet", "wardrobe", "closet", "خزانه", "دولاب"], "cabinet"],
+  [["chessboard", "chess board", "checkerboard", "رقعه شطرنج", "شطرنج"], "chessboard"],
+  [["globe", "كره ارضيه", "مجسم الارض"], "planet", { variant: "earth" }],
 ];
 
 for (const [phrases, id, extra] of OBJECTS) add(phrases, object(id, extra));
@@ -212,7 +222,7 @@ add(
 add(["wood", "wooden", "خشب", "خشبي", "خشبيه"], material("wood"));
 add(["plastic", "pvc", "بلاستيك"], material("plastic"));
 add(["golden", "ذهب"], material("gold"));
-add(["stone", "concrete", "marble", "rock", "حجر", "خرسانه", "رخام", "اسمنت"], material("stone"));
+add(["stone", "concrete", "marble", "rock", "حجر", "حجري", "حجريه", "خرسانه", "رخام", "اسمنت"], material("stone"));
 add(["rubber", "matte", "مطاط"], material("rubber"));
 add(["water", "ماء", "مياه"], material("water"));
 add(["ceramic", "سيراميك"], material("ceramic"));
@@ -231,6 +241,7 @@ add(["tall", "high", "طويل", "طويله", "مرتفع", "عالي", "عال
 add(["short", "low", "flat", "قصير", "قصيره", "منخفض", "منخفضه"], { kind: "size", sy: 0.62 });
 add(["wide", "broad", "عريض", "عريضه", "واسع"], { kind: "size", sx: 1.5 });
 add(["narrow", "thin", "نحيف", "رفيع"], { kind: "size", sx: 0.7 });
+add(["double", "twice", "ضعف"], { kind: "size", s: 2 });
 
 add(["on top of", "on", "above", "over", "atop", "فوق", "علي", "اعلي", "اعلاه"], { kind: "relation", id: "on" });
 add(["under", "below", "beneath", "تحت", "اسفل"], { kind: "relation", id: "under" });
@@ -247,6 +258,7 @@ add(["coarse", "rough", "خشن", "خشنه"], { kind: "modifier", id: "coarse" 
 add(["fine", "ناعم", "ناعمه"], { kind: "modifier", id: "fine" });
 add(["cutaway", "cross section", "section", "open", "مقطع", "مقطوع", "مقطوعه", "مفتوح"], { kind: "modifier", id: "cutaway" });
 add(["closed", "مغلق", "مغلقه"], { kind: "modifier", id: "closed" });
+add(["arched", "مقوس", "مقوسه"], { kind: "modifier", id: "arched" });
 
 const SKIP = new Set([
   "a", "an", "the", "of", "with", "in", "from", "to", "for", "some", "my", "please",
@@ -256,6 +268,21 @@ const SKIP = new Set([
 ]);
 
 const FLOOR = new Set(["floor", "floors", "story", "stories", "storey", "storeys", "level", "levels", "طابق", "طوابق", "دور", "ادوار"]);
+
+const UNIT_SCALE = {
+  m: 1,
+  meter: 1,
+  meters: 1,
+  metre: 1,
+  metres: 1,
+  cm: 0.01,
+  centimeter: 0.01,
+  centimeters: 0.01,
+  mm: 0.001,
+  متر: 1,
+  امتار: 1,
+  سم: 0.01,
+};
 
 const NUM_EN = {
   one: 1, single: 1, two: 2, pair: 2, couple: 2, three: 3, four: 4, five: 5,
@@ -549,6 +576,9 @@ function assemble(items, lang, text) {
     } else if (mod.kind === "lightness") {
       const o = bind(objs, mod, lang);
       if (o) o.lightness = mod.id === "light" ? 1 : -1;
+    } else if (mod.kind === "dimension") {
+      const o = bind(objs, mod, lang, () => true, 6);
+      if (o) o.scale = clamp(mod.meters, 0.3, 2.8);
     } else if (mod.kind === "number" && !used.has(mod)) {
       const o = bind(objs, mod, lang, (x) => !x.explicitCount, 5);
       if (!o) continue;
@@ -576,6 +606,12 @@ function assemble(items, lang, text) {
       before.anchor = ai;
       before.slot = rel.id;
     }
+  }
+
+  for (const mod of items) {
+    if (mod.kind !== "modifier" || mod.id !== "arched") continue;
+    const o = bind(objs, mod, lang, (x) => ["door", "window", "bridge", "wall", "house"].includes(x.type), 5);
+    if (o && !o.variant) o.variant = "arched";
   }
 
   for (const o of objs) {
@@ -661,15 +697,46 @@ export function parsePrompt(text) {
       i += 1;
       continue;
     }
-    if (/^\d+$/.test(tok.n)) {
-      const value = Number.parseInt(tok.n, 10);
+    const grid = tok.n.match(/^(\d+)x(\d+)$/);
+    if (grid) {
+      items.push({
+        kind: "number",
+        value: clamp(Number(grid[1]) * Number(grid[2]), 1, 24),
+        clause,
+        i,
+        len: 1,
+      });
+      i += 1;
+      continue;
+    }
+    if (/^\d+(?:\.\d+)?$/.test(tok.n)) {
+      const value = Number.parseFloat(tok.n);
+      const next = tokens[i + 1];
+      const unit = next && !next.sep ? UNIT_SCALE[stripPrefixes(next.n)] : undefined;
+      if (unit) {
+        items.push({ kind: "dimension", meters: value * unit, clause, i, len: 2 });
+        i += 2;
+        continue;
+      }
+      if (!Number.isInteger(value)) {
+        i += 1;
+        continue;
+      }
+      const whole = Math.round(value);
       const floorish = isFloorToken(tokens[i + 1]);
-      items.push({ kind: floorish ? "floors" : "number", value, clause, i, len: 1 });
+      items.push({ kind: floorish ? "floors" : "number", value: whole, clause, i, len: 1 });
       i += floorish ? 2 : 1;
       continue;
     }
     const wordNum = NUM_EN[tok.n] || NUM_AR[stripPrefixes(tok.n)];
     if (wordNum) {
+      const next = tokens[i + 1];
+      const unit = next && !next.sep ? UNIT_SCALE[stripPrefixes(next.n)] : undefined;
+      if (unit) {
+        items.push({ kind: "dimension", meters: wordNum * unit, clause, i, len: 2 });
+        i += 2;
+        continue;
+      }
       const floorish = isFloorToken(tokens[i + 1]);
       items.push({ kind: floorish ? "floors" : "number", value: wordNum, clause, i, len: 1 });
       i += floorish ? 2 : 1;
@@ -725,6 +792,43 @@ export function rng(seed) {
     s = (Math.imul(1664525, s) + 1013904223) >>> 0;
     return s / 4294967296;
   };
+}
+
+const SUGGEST_EN = [
+  "cube", "sphere", "cylinder", "cone", "arch", "window", "door", "dome", "pyramid", "torus", "prism",
+  "red", "blue", "green", "yellow", "glass", "metal", "wood", "stone", "wooden",
+  "house", "table", "chair", "sofa", "bed", "cabinet", "bookshelf", "lamp",
+  "car", "bridge", "gear", "pipe", "pump", "robot", "castle", "chessboard", "dice", "crown",
+  "tree", "building", "rocket", "planet", "globe", "aquaponics",
+  "water filtration system", "wooden door", "glass window", "stone arch", "metal gear", "wooden table",
+  "arched door", "school building", "four glass windows",
+];
+
+const SUGGEST_AR = [
+  "مكعب", "كره", "اسطوانه", "مخروط", "قوس", "نافذه", "باب", "قبه", "هرم", "حلقة",
+  "احمر", "ازرق", "اخضر", "اصفر", "زجاج", "معدن", "خشب", "حجر", "خشبي",
+  "منزل", "طاوله", "كرسي", "اريكه", "سرير", "خزانه", "رف", "مصباح",
+  "سياره", "جسر", "ترس", "انبوب", "مضخه", "روبوت", "قلعه", "شطرنج", "نرد", "تاج",
+  "شجره", "مبني", "صاروخ", "كوكب", "نظام ترشيح", "زراعه مائيه",
+  "باب خشبي", "نافذه زجاجيه", "قوس حجري", "طاوله خشبيه",
+];
+
+export function suggestPrompt(text, langHint) {
+  const raw = String(text || "");
+  const lang = langHint || (/[\u0600-\u06FF]/.test(raw) ? "ar" : "en");
+  const typing = raw.length > 0 && !/\s$/.test(raw);
+  if (!typing) return [];
+  const last = raw.trimEnd().split(/\s+/).pop() || "";
+  const stem = normalize(last);
+  if (stem.length < 1) return [];
+  const pool = lang === "ar" ? SUGGEST_AR : SUGGEST_EN;
+  const hits = [];
+  for (const label of pool) {
+    const norm = normalize(label);
+    if (norm.startsWith(stem) && norm !== stem) hits.push(label);
+    if (hits.length >= 6) break;
+  }
+  return hits;
 }
 
 export { DEFAULT_LAYERS, LAYER_ORDER };

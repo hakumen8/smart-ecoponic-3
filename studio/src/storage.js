@@ -20,3 +20,28 @@ export function clearPrompt() {
   delete next.presetId;
   localStorage.setItem(KEY, JSON.stringify(next));
 }
+
+export function rememberPrompt(text) {
+  const value = String(text || "").trim();
+  if (!value) return loadState().history || [];
+  const history = [value, ...(loadState().history || []).filter((item) => item !== value)].slice(0, 3);
+  saveState({ history });
+  return history;
+}
+
+export function loadFavorites() {
+  const list = loadState().favorites;
+  return Array.isArray(list) ? list : [];
+}
+
+export function saveFavorite(entry) {
+  const favorites = [entry, ...loadFavorites().filter((item) => item.prompt !== entry.prompt)].slice(0, 24);
+  saveState({ favorites });
+  return favorites;
+}
+
+export function removeFavorite(id) {
+  const favorites = loadFavorites().filter((item) => item.id !== id);
+  saveState({ favorites });
+  return favorites;
+}

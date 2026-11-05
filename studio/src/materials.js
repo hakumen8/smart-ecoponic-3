@@ -8,6 +8,7 @@ import {
   MeshStandardMaterial,
   SRGBColorSpace,
 } from "three";
+import { isFast } from "./quality.js";
 
 const textures = new Map();
 
@@ -171,11 +172,11 @@ function layerMaps(id) {
   let maps;
   switch (id) {
     case "sponge": {
-      const pores = poreField(70, 512);
+      const pores = poreField(120, 512);
       maps = {
-        map: canvasTexture("layer:sponge:v2", (ctx, w, h) => drawSponge(ctx, w, h, pores), 512, 512),
-        bump: canvasTexture("layer:sponge:bump", (ctx, w, h) => drawSponge(ctx, w, h, pores, { bump: true }), 512, 512, LinearSRGBColorSpace),
-        bumpScale: 0.42,
+        map: canvasTexture("layer:sponge:v3", (ctx, w, h) => drawSponge(ctx, w, h, pores), 512, 512),
+        bump: canvasTexture("layer:sponge:bump:v3", (ctx, w, h) => drawSponge(ctx, w, h, pores, { bump: true }), 512, 512, LinearSRGBColorSpace),
+        bumpScale: 0.55,
       };
       break;
     }
@@ -281,35 +282,60 @@ export function layerTexture(id) {
 }
 
 export function glassMaterial(hex = "#e7f6ff") {
+  if (isFast()) {
+    return new MeshStandardMaterial({
+      color: hex,
+      metalness: 0.04,
+      roughness: 0.08,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+      envMapIntensity: 0.6,
+    });
+  }
   return new MeshPhysicalMaterial({
     color: hex,
     metalness: 0,
-    roughness: 0.06,
-    transmission: 0.92,
-    thickness: 0.45,
+    roughness: 0.05,
+    transmission: 0.94,
+    thickness: 0.55,
     ior: 1.5,
     transparent: true,
     opacity: 1,
     clearcoat: 1,
-    clearcoatRoughness: 0.08,
-    envMapIntensity: 1,
+    clearcoatRoughness: 0.05,
+    envMapIntensity: 1.15,
   });
 }
 
 export function waterMaterial(hex = "#4fc3f7", dirty = false) {
+  if (isFast()) {
+    return new MeshStandardMaterial({
+      color: hex,
+      roughness: dirty ? 0.35 : 0.12,
+      metalness: 0.02,
+      transparent: true,
+      opacity: dirty ? 0.78 : 0.62,
+      depthWrite: false,
+      emissive: hex,
+      emissiveIntensity: dirty ? 0.05 : 0.12,
+    });
+  }
   return new MeshPhysicalMaterial({
     color: hex,
     metalness: 0,
-    roughness: dirty ? 0.22 : 0.06,
-    transmission: dirty ? 0.55 : 0.82,
-    thickness: dirty ? 0.8 : 0.6,
+    roughness: dirty ? 0.18 : 0.04,
+    transmission: dirty ? 0.62 : 0.88,
+    thickness: dirty ? 0.9 : 0.7,
     ior: 1.333,
     transparent: true,
-    opacity: dirty ? 0.92 : 0.9,
+    opacity: dirty ? 0.94 : 0.92,
     attenuationColor: hex,
-    attenuationDistance: dirty ? 0.35 : 0.8,
-    clearcoat: 0.4,
-    envMapIntensity: 1,
+    attenuationDistance: dirty ? 0.28 : 0.9,
+    clearcoat: 0.55,
+    envMapIntensity: 1.2,
+    emissive: hex,
+    emissiveIntensity: dirty ? 0.02 : 0.06,
   });
 }
 

@@ -29,6 +29,10 @@ Copy `studio/dist/index.html` and `studio/dist/assets/` to the repository root b
 ## Controls
 
 - Language toggle switches every interface string, the examples, and the gallery. The layout is RTL in Arabic and LTR in English.
-- Reset camera, orbit / pinch-zoom / two-finger pan, auto-rotate, wireframe, labels, grid, fullscreen.
-- Background color, lighting preset, intensity, and shadows.
+- A dock on the view resets the camera, exports, and toggles fullscreen. The toolbar still has orbit options, Static/Live flow, and GLB, PNG, and OBJ.
+- Drag the panel edge on a wide screen to resize it. On desktop, `R` resets the camera, `F` is fullscreen, `W` `L` `G` `A` toggle wire, labels, grid, and rotate, `1`/`2` switch flow, `Q` switches High/Fast quality, `S` copies a share link, and `?` lists shortcuts.
+- Suggestions appear while typing. Improve description rewrites the text for the generator. The last three prompts and favorite models stay in `localStorage`.
+- Click a part to change its size and color. High quality uses fuller meshes and shadows; Fast quality simplifies glass and heavy geometry for iPad.
+- Share copies a URL with the description in `?q=`. PNG export can be standard, high-resolution, or transparent.
+- Background color, lighting preset, intensity, shadows, and a sky-and-ground stage.
 - The last description and these view settings are stored in `localStorage` (`mujassam.studio.v1`).

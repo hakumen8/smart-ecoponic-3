@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parsePrompt } from "./src/parser.js";
+import { improvePrompt } from "./src/improve.js";
+import { parsePrompt, suggestPrompt } from "./src/parser.js";
 
 test("red cube", () => {
   const s = parsePrompt("red cube");
@@ -121,4 +122,42 @@ test("coarse modifier retargets a bare layer word", () => {
   assert.equal(s.mode, "filtration");
   assert.ok(s.filtration.layers.includes("coarseSand"));
   assert.ok(s.filtration.layers.includes("gravel"));
+});
+
+test("meter dimensions set scale without becoming a count", () => {
+  const s = parsePrompt("a 2 meter cylinder");
+  assert.equal(s.objects.length, 1);
+  assert.equal(s.objects[0].type, "cylinder");
+  assert.equal(s.objects[0].count, 1);
+  assert.ok(s.objects[0].scale >= 1.9 && s.objects[0].scale <= 2.1);
+});
+
+test("arches, doors, windows and a grid of cubes", () => {
+  const s = parsePrompt("a stone arch, a wooden door and two glass windows");
+  const arch = s.objects.find((o) => o.type === "arch");
+  const door = s.objects.find((o) => o.type === "door");
+  const window = s.objects.find((o) => o.type === "window");
+  assert.equal(arch.material, "stone");
+  assert.equal(door.material, "wood");
+  assert.equal(window.material, "glass");
+  assert.equal(window.count, 2);
+  const grid = parsePrompt("3x3 blue cubes");
+  const cubes = grid.objects.find((o) => o.type === "cube");
+  assert.equal(cubes.count, 9);
+  assert.equal(cubes.color, "#1e88e5");
+});
+
+test("arched door keeps the variant", () => {
+  const s = parsePrompt("an arched wooden door");
+  assert.equal(s.objects[0].type, "door");
+  assert.equal(s.objects[0].variant, "arched");
+  assert.equal(s.objects[0].material, "wood");
+});
+
+test("improve description and suggestions", () => {
+  assert.match(improvePrompt("school"), /window/i);
+  assert.match(improvePrompt("لعبة"), /شطرنج|نرد/);
+  assert.match(improvePrompt("red cube"), /cube/i);
+  const hits = suggestPrompt("cyl", "en");
+  assert.ok(hits.some((hit) => /cylinder/i.test(hit)));
 });

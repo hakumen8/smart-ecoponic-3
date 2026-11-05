@@ -21,6 +21,7 @@ import {
 } from "three";
 import { G, M, label, spin } from "./builders.js";
 import { LAYER_COLORS, glassMaterial, glowingMaterial, layerMaterial, metalMaterial, paint, waterMaterial } from "./materials.js";
+import { isFast, seg } from "./quality.js";
 
 const UP = new Vector3(0, 1, 0);
 const FLOW_LERP = new Color();
@@ -110,14 +111,15 @@ function addSponge(group, y, height, radius, cut, seed) {
   lobe.position.set(0.015 * scale, y + height * 0.14, 0.01 * scale);
   group.add(lobe);
 
+  const poreCount = isFast() ? 14 : 36;
   const pores = new InstancedMesh(
     new SphereGeometry(1, 7, 6),
     new MeshStandardMaterial({ color: "#ffffff", roughness: 1 }),
-    24,
+    poreCount,
   );
   const dummy = new Object3D();
   const color = new Color();
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < poreCount; i++) {
     const face = i % 2;
     const ang = face === 0 ? cut.start + 0.02 : cut.start + cut.length - 0.02;
     const rad = h01(seed + i * 4.1) * bodyR * 0.88;
@@ -273,45 +275,73 @@ function bedTexture(key, draw, size = 512) {
 }
 
 function drySandMaterial() {
-  const map = bedTexture("dry-sand", (ctx, w, h) => {
-    ctx.fillStyle = "#ead9a6";
+  const map = bedTexture("dry-sand-v2", (ctx, w, h) => {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, "#f8edd0");
+    sky.addColorStop(1, "#e2c48a");
+    ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < 5200; i++) {
+    for (let i = 0; i < 7400; i++) {
       const x = h01(i + 1) * w;
       const y = h01(i + 4) * h;
-      const r = 0.5 + h01(i + 8) * 1.35;
+      const r = 0.6 + h01(i + 8) * 2.4;
       const tone = h01(i + 12);
-      ctx.fillStyle = tone > 0.66 ? "#f7edd0" : tone > 0.33 ? "#d8c28a" : "#c4a86a";
-      ctx.fillRect(x, y, r, r);
+      ctx.fillStyle = tone > 0.72 ? "#fff6d8" : tone > 0.4 ? "#e7c98a" : tone > 0.18 ? "#c4964a" : "#8d6230";
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * 0.72, h01(i + 3) * 6, 0, Math.PI * 2);
+      ctx.fill();
     }
   });
-  return new MeshStandardMaterial({ color: "#f4e6c0", map, roughness: 0.96, metalness: 0, side: DoubleSide });
+  return new MeshStandardMaterial({ color: "#f6e7c2", map, roughness: 0.97, metalness: 0, side: DoubleSide });
 }
 
 function filterPadMaterial(coarse) {
-  const map = bedTexture(coarse ? "filter-coarse" : "filter-fine", (ctx, w, h) => {
-    ctx.fillStyle = coarse ? "#d5e4ee" : "#f4f7f8";
-    ctx.fillRect(0, 0, w, h);
-    const step = coarse ? 28 : 8;
-    for (let x = 0; x < w; x += step) {
-      ctx.fillStyle = coarse ? (Math.floor(x / step) % 2 ? "#7fa8be" : "#eef6fb") : Math.floor(x / step) % 2 ? "#d5dee6" : "#ffffff";
-      ctx.fillRect(x, 0, Math.max(2, step * (coarse ? 0.42 : 0.38)), h);
+  const map = bedTexture(coarse ? "filter-coarse-v2" : "filter-fine-v2", (ctx, w, h) => {
+    if (!coarse) {
+      ctx.fillStyle = "#f4f8fb";
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#b7c9d6";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= w; i += 6) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, h);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(w, i);
+        ctx.stroke();
+      }
+      return;
     }
-    ctx.strokeStyle = coarse ? "#4f7386" : "#9aabba";
-    ctx.lineWidth = coarse ? 2 : 1;
-    const row = coarse ? 36 : 14;
-    for (let y = 0; y < h; y += row) {
+    ctx.fillStyle = "#d7e8f2";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "#3f6f88";
+    ctx.lineWidth = 4;
+    for (let i = 0; i <= w; i += 32) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, h);
       ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(w, i);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#8fb8cc";
+    for (let y = 16; y < h; y += 32) {
+      for (let x = 16; x < w; x += 32) {
+        ctx.beginPath();
+        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   });
   return new MeshStandardMaterial({
-    color: coarse ? "#d7e6f0" : "#f7fbfc",
+    color: coarse ? "#d5e6f1" : "#f7fbfe",
     map,
-    roughness: coarse ? 0.62 : 0.48,
-    metalness: 0.04,
+    roughness: coarse ? 0.58 : 0.42,
+    metalness: 0.05,
     side: DoubleSide,
   });
 }
@@ -337,25 +367,54 @@ function addFilterPleats(group, y, height, radius, cut, count, thick, color) {
   }
 }
 
+function addSandGrains(group, y, height, radius, cut) {
+  const count = isFast() ? 28 : 70;
+  const geo = new IcosahedronGeometry(1, 0);
+  const mat = new MeshStandardMaterial({ color: "#f0d48a", roughness: 1 });
+  const mesh = new InstancedMesh(geo, mat, count);
+  const dummy = new Object3D();
+  const color = new Color();
+  const tones = ["#fff3cf", "#e8c56a", "#c9943c", "#a56a28", "#f7e7b0"];
+  for (let i = 0; i < count; i++) {
+    const ang = cut.start + h01(i + 2) * cut.length;
+    const rad = Math.sqrt(0.08 + h01(i + 5) * 0.9) * radius * 0.72;
+    const yy = y + (h01(i + 9) - 0.35) * height * 0.72;
+    const s = (0.028 + h01(i + 4) * 0.034) * (radius / 0.5);
+    dummy.position.set(Math.sin(ang) * rad, yy, Math.cos(ang) * rad);
+    dummy.rotation.set(h01(i) * 4, h01(i + 1) * 4, 0);
+    dummy.scale.setScalar(s);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+    color.set(tones[i % tones.length]);
+    mesh.setColorAt(i, color);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+}
+
 function addCleanBed(group, id, y, height, radius, cut) {
   if (id === "drySand") {
     addSolidBed(group, y, height, radius, cut, drySandMaterial());
+    addSandGrains(group, y, height, radius, cut);
     return;
   }
   if (id === "fineFilter") {
     addSolidBed(group, y, height, radius, cut, filterPadMaterial(false));
-    addFilterPleats(group, y, height, radius, cut, 18, Math.max(0.008, radius * 0.018), "#f7fbff");
+    addFilterPleats(group, y, height, radius, cut, seg(22, 10), Math.max(0.006, radius * 0.014), "#f7fbff");
+    const gauze = pieCylinder(radius * 0.82, radius * 0.82, 0.012, layerMaterial("screen"), cut, seg(28, 16));
+    gauze.position.y = y + height * 0.42;
+    group.add(gauze);
     return;
   }
   if (id === "coarseFilter") {
     addSolidBed(group, y, height, radius, cut, filterPadMaterial(true));
-    addFilterPleats(group, y, height, radius, cut, 8, Math.max(0.02, radius * 0.055), "#6f9aaf");
+    addFilterPleats(group, y, height, radius, cut, seg(9, 6), Math.max(0.028, radius * 0.07), "#4f86a3");
     return;
   }
-  const sponge = layerMaterial("sponge");
-  sponge.roughness = 0.78;
-  sponge.bumpScale = Math.max(sponge.bumpScale || 0, 0.28);
-  addSolidBed(group, y, height, radius, cut, sponge);
+  addSponge(group, y, height, radius, cut, 23);
 }
 
 function addSeam(group, y, radius, cut) {
@@ -381,7 +440,7 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
   const y0 = 0.08;
 
   const shellMat = glassMaterial("#e7f6ff");
-  const shell = new Mesh(new CylinderGeometry(radius, radius, h, tall ? 64 : 40, 1, true, cut.start, cut.length), shellMat);
+  const shell = new Mesh(new CylinderGeometry(radius, radius, h, seg(tall ? 64 : 40, tall ? 28 : 18), 1, true, cut.start, cut.length), shellMat);
   shell.material.side = DoubleSide;
   shell.castShadow = false;
   shell.receiveShadow = true;
@@ -493,15 +552,31 @@ export function buildFilterColumn({ layers, lang = "en", radius = 0.5, cutaway =
 
 function animateFlows(group, t, live) {
   for (const flow of group.userData.flows || []) {
+    if (flow.stream) {
+      flow.stream.visible = live;
+      if (live && flow.stream.material) {
+        flow.stream.material.opacity = 0.62 + Math.sin(t * 3.2) * 0.18;
+      }
+    }
     const n = flow.beads.length || 1;
     for (let i = 0; i < flow.beads.length; i++) {
       const bead = flow.beads[i];
       bead.visible = live;
       if (!live) continue;
       const u = (t * flow.speed + i / n) % 1;
-      bead.position.copy(flow.curve.getPoint(u));
+      const point = flow.curve.getPoint(u);
+      const side = flow.wobble || 0;
+      if (side) {
+        const tangent = flow.curve.getTangent(u);
+        const sway = Math.sin(t * 6 + i * 1.7) * side;
+        point.x += tangent.z * sway;
+        point.z -= tangent.x * sway;
+      }
+      bead.position.copy(point);
+      const pulse = 0.78 + Math.sin(t * 10 + i * 0.9) * 0.28;
+      bead.scale.set(pulse, pulse * 1.25, pulse);
       if (flow.colorTo) {
-        const shifted = Math.min(1, Math.max(0, (u - 0.12) / 0.7));
+        const shifted = Math.min(1, Math.max(0, (u - 0.08) / 0.72));
         const smooth = shifted * shifted * (3 - 2 * shifted);
         FLOW_LERP.copy(flow.color).lerp(flow.colorTo, smooth);
         bead.material.color.copy(FLOW_LERP);
@@ -521,12 +596,32 @@ export function addFlow(group, points, count = 3, opts = {}) {
   const curve = new CatmullRomCurve3(points, false, "centripetal");
   if (opts.tube !== false) {
     const tube = new Mesh(
-      new TubeGeometry(curve, Math.max(24, points.length * 14), opts.tubeRadius ?? 0.042, 8, false),
+      new TubeGeometry(curve, Math.max(24, points.length * 14), opts.tubeRadius ?? 0.042, seg(8, 6), false),
       metalMaterial(opts.tubeColor || "#cfd8dc", 0.78, 0.28),
     );
     tube.castShadow = true;
     tube.receiveShadow = true;
     group.add(tube);
+  }
+  let stream = null;
+  if (opts.stream) {
+    const streamColor = opts.streamColor || color;
+    stream = new Mesh(
+      new TubeGeometry(curve, Math.max(18, points.length * 10), opts.streamRadius ?? 0.055, seg(8, 5), false),
+      new MeshStandardMaterial({
+        color: streamColor,
+        emissive: streamColor,
+        emissiveIntensity: 0.7,
+        transparent: true,
+        opacity: 0.72,
+        roughness: 0.25,
+        depthWrite: false,
+      }),
+    );
+    stream.castShadow = false;
+    stream.visible = false;
+    stream.userData.flowStream = true;
+    group.add(stream);
   }
   const beads = [];
   const radius = opts.radius ?? 0.036;
@@ -574,5 +669,7 @@ export function addFlow(group, points, count = 3, opts = {}) {
     color: new Color(color),
     colorTo: opts.colorTo ? new Color(opts.colorTo) : null,
     arrows,
+    stream,
+    wobble: opts.wobble || 0,
   });
 }
